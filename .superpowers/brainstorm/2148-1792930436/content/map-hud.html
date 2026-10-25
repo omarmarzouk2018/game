@@ -1,0 +1,27 @@
+<h2>واجهة مرحلة الجزيرة الأولى</h2>
+<p class="subtitle">المشهد في الحالتين هو جزيرتك كاملة. نحدد هنا فقط مقدار واجهة التحكم الظاهرة أثناء استكشاف الخريطة.</p>
+<style>
+ .hud-choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+ .hud-choice{cursor:pointer;overflow:hidden;border:1px solid #344b5d;border-radius:12px;background:#102131;transition:transform .18s,border-color .18s}.hud-choice:hover{transform:translateY(-3px);border-color:#d9b66f}.hud-choice.selected{outline:2px solid #d9b66f}
+ .game-view{position:relative;aspect-ratio:1.58;overflow:hidden;background:linear-gradient(#1b5268,#0c3049)}
+ .island{position:absolute;left:50%;top:52%;width:76%;height:68%;transform:translate(-50%,-50%) rotate(-9deg);border-radius:48%;background:radial-gradient(ellipse at 45% 69%,#a2a36a 0 18%,transparent 19%),radial-gradient(ellipse at 50% 48%,#788c54 0 40%,#536f49 54%,#d0be88 58%,#276c7c 61%,transparent 64%);box-shadow:0 12px 18px #071620bb}
+ .mountains{position:absolute;inset:13% 24% 47%;background:#858471;clip-path:polygon(0 100%,24% 18%,38% 70%,60% 0,79% 76%,100% 14%,100% 100%)}
+ .trees{position:absolute;inset:0;background-image:radial-gradient(circle at 24% 55%,#234934 0 4px,transparent 5px),radial-gradient(circle at 30% 43%,#244a35 0 4px,transparent 5px),radial-gradient(circle at 70% 58%,#214631 0 4px,transparent 5px),radial-gradient(circle at 75% 41%,#254b36 0 4px,transparent 5px),radial-gradient(circle at 41% 33%,#284d38 0 4px,transparent 5px),radial-gradient(circle at 60% 35%,#254a35 0 4px,transparent 5px)}
+ .bay{position:absolute;right:12%;top:43%;width:24%;height:23%;border-radius:50%;background:#23667b;border:3px solid #d2c18c;transform:rotate(-12deg)}
+ .top-mark{position:absolute;left:10px;top:10px;width:55px;height:18px;border-radius:10px;background:#0c1d2acc}
+ .legend{position:absolute;left:12px;bottom:11px;padding:9px 12px;border:1px solid #8ea4aa66;border-radius:8px;background:#081c27d9;color:#eee5d1;font-size:11px;line-height:1.55;box-shadow:0 5px 12px #05131a66}
+ .hint-pill{position:absolute;right:12px;bottom:12px;padding:6px 9px;border-radius:6px;background:#102433d9;color:#dfd4bb;font-size:10px}
+ .choice-copy{padding:13px 15px 16px}.choice-copy h3{margin:0 0 6px}.choice-copy p{margin:0;line-height:1.5}
+ @media(max-width:760px){.hud-choices{grid-template-columns:1fr}}
+</style>
+<div class="hud-choices">
+ <div class="hud-choice" data-choice="hint" onclick="toggleSelect(this)">
+  <div class="game-view"><div class="island"><div class="mountains"></div><div class="bay"></div><div class="trees"></div></div><div class="top-mark"></div><div class="legend">↑ ↓ ← → تحريك الكاميرا<br>عجلة الماوس: تكبير / تصغير<br>Ctrl + تحريك: تدوير</div><div class="hint-pill">الجزيرة غير مأهولة</div></div>
+  <div class="choice-copy"><h3>أ — تلميحات تحكم خفيفة</h3><p>تلميح صغير شبه شفاف يشرح الأسهم والعجلة وCtrl؛ يبقى المشهد واضحًا، ويعرف اللاعب كيف يستكشف الجزيرة.</p></div>
+ </div>
+ <div class="hud-choice" data-choice="clean" onclick="toggleSelect(this)">
+  <div class="game-view"><div class="island"><div class="mountains"></div><div class="bay"></div><div class="trees"></div></div><div class="top-mark"></div><div class="hint-pill">الجزيرة غير مأهولة</div></div>
+  <div class="choice-copy"><h3>ب — مشهد نظيف بلا تلميحات</h3><p>تظهر الجزيرة فقط مع وسم صغير بأنها غير مأهولة؛ واجهة تحكم أكثر غمرًا، لكن إيماءات الكاميرا قد لا تكون واضحة.</p></div>
+ </div>
+</div>
+<p class="subtitle" style="margin-top:14px">اختر أحدهما. يمكن للتلميحات أن تختفي بعد أول استخدام لاحقًا، إن رغبت.</p>

@@ -1,0 +1,28 @@
+<h2>ما الذي يراه اللاعب عند فتح الجزيرة؟</h2>
+<p class="subtitle">الخريطة نفسها واحدة؛ الاختلاف في مستوى التكبير الابتدائي فقط. يمكن التكبير بالعجلة في الحالتين.</p>
+<style>
+ .views{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+ .view-option{cursor:pointer;overflow:hidden;border:1px solid #344b5d;border-radius:12px;background:#102131;transition:transform .18s,border-color .18s}
+ .view-option:hover{transform:translateY(-3px);border-color:#d9b66f}.view-option.selected{outline:2px solid #d9b66f}
+ .viewport{position:relative;aspect-ratio:1.55;background:linear-gradient(#194457,#0d2a40);overflow:hidden}
+ .island{position:absolute;left:50%;top:51%;transform:translate(-50%,-50%) rotate(-9deg);width:82%;height:68%;border-radius:50% 47% 48% 44%;background:radial-gradient(ellipse at 43% 43%,#9ba565 0 22%,#738755 23% 45%,#586f4b 46% 61%,#d1c18c 62% 66%,#267087 67% 72%,transparent 74%);box-shadow:0 12px 18px #071620aa}
+ .land{position:absolute;inset:18% 18%;border-radius:50%;background:radial-gradient(ellipse at 48% 70%,#91a05e 0 25%,transparent 26%),linear-gradient(160deg,transparent 25%,#84866b 26% 33%,transparent 34% 44%,#777f63 45% 51%,transparent 52%);opacity:.9}
+ .forest{position:absolute;inset:0;background-image:radial-gradient(circle at 25% 34%,#234934 0 4px,transparent 5px),radial-gradient(circle at 34% 48%,#254b36 0 5px,transparent 6px),radial-gradient(circle at 67% 36%,#244a35 0 5px,transparent 6px),radial-gradient(circle at 74% 56%,#214631 0 5px,transparent 6px),radial-gradient(circle at 43% 27%,#284d38 0 4px,transparent 5px),radial-gradient(circle at 58% 70%,#254a35 0 4px,transparent 5px)}
+ .harbor{position:absolute;right:16%;top:45%;width:21%;height:18%;border-radius:50%;background:#226179;border:3px solid #d4c28c;transform:rotate(-12deg)}
+ .mountains{position:absolute;left:27%;top:27%;width:45%;height:24%;background:linear-gradient(135deg,transparent 35%,#c8c5ad 36% 42%,#767e68 43% 61%,transparent 62%);clip-path:polygon(0 100%,24% 12%,39% 65%,61% 0,82% 75%,100% 23%,100% 100%);opacity:.86}
+ .frame-a .island{width:82%;height:68%}.frame-b .island{width:112%;height:92%}
+ .camera-mark{position:absolute;left:50%;top:43%;transform:translate(-50%,-50%);font-size:23px;filter:drop-shadow(0 2px 2px #000)}
+ .view-copy{padding:13px 15px 16px}.view-copy h3{margin:0 0 6px}.view-copy p{margin:0;line-height:1.5}
+ @media(max-width:760px){.views{grid-template-columns:1fr}}
+</style>
+<div class="views">
+ <div class="view-option" data-choice="whole-island" onclick="toggleSelect(this)">
+  <div class="viewport frame-a"><div class="island"><div class="land"></div><div class="mountains"></div><div class="harbor"></div><div class="forest"></div></div><div class="camera-mark">◈</div></div>
+  <div class="view-copy"><h3>أ — لقطة واسعة للجزيرة كاملة</h3><p>تظهر حدود الجزيرة والخليج والجبال دفعة واحدة عند الدخول، مع مساحة بحر حولها. الخيار الأوضح لمعاينة الخريطة.</p></div>
+ </div>
+ <div class="view-option" data-choice="closer" onclick="toggleSelect(this)">
+  <div class="viewport frame-b"><div class="island"><div class="land"></div><div class="mountains"></div><div class="harbor"></div><div class="forest"></div></div><div class="camera-mark">◈</div></div>
+  <div class="view-copy"><h3>ب — لقطة أقرب للتضاريس</h3><p>تملأ الجزيرة معظم الشاشة وتظهر تضاريسها أكبر، لكن قد لا تظهر أطرافها كلها حتى يبعد اللاعب الكاميرا قليلًا.</p></div>
+ </div>
+</div>
+<p class="subtitle" style="margin-top:14px">اختر مستوى بداية الكاميرا، أو اكتب تعديلك.</p>

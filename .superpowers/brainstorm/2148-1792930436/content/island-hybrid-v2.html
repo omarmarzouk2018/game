@@ -1,0 +1,51 @@
+<h2>دمج الخليج الطبيعي مع التضاريس الجبلية</h2>
+<p class="subtitle">جمعت اختيارك (ب + ج) في تصورين: كلاهما يضم خليجًا صالحًا للمرفأ ومرتفعات، والاختلاف في مقدار السهول المتاحة للبناء.</p>
+<style>
+  .hybrid-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+  .hybrid-option{cursor:pointer;overflow:hidden;border:1px solid #344b5d;border-radius:12px;background:#102131;transition:transform .18s,border-color .18s}
+  .hybrid-option:hover{transform:translateY(-3px);border-color:#d9b66f}.hybrid-option.selected{outline:2px solid #d9b66f}
+  .hybrid-art{display:block;width:100%;aspect-ratio:1.52;background:#12364c}.hybrid-copy{padding:13px 15px 16px}.hybrid-copy h3{margin:0 0 6px}.hybrid-copy p{margin:0;line-height:1.5}
+  @media(max-width:800px){.hybrid-options{grid-template-columns:1fr}}
+</style>
+<div class="hybrid-options">
+  <div class="hybrid-option" data-choice="harbor-forward" onclick="toggleSelect(this)">
+    <svg class="hybrid-art" viewBox="0 0 620 405" role="img" aria-label="جزيرة بخليج واسع وسهول أمام جبال خلفية">
+      <defs><linearGradient id="waterA" x2="0" y2="1"><stop stop-color="#28647a"/><stop offset="1" stop-color="#102b43"/></linearGradient><linearGradient id="meadowA" x2="0" y2="1"><stop stop-color="#9e9b62"/><stop offset="1" stop-color="#536b43"/></linearGradient></defs>
+      <rect width="620" height="405" fill="url(#waterA)"/>
+      <path d="M66 231 Q77 186 127 180 L164 136 203 155 250 103 294 129 340 91 383 123 432 105 472 146 519 155 Q552 183 548 226 L514 267 468 291 421 277 379 310 334 289 292 319 246 289 201 304 162 272 112 277 77 257Z" fill="#225767" opacity=".72"/>
+      <path d="M81 224 Q91 188 133 188 L171 146 205 164 251 114 292 139 340 102 381 134 428 116 465 154 510 164 Q534 185 533 222 L504 253 464 276 418 262 377 293 335 275 293 301 249 273 205 287 168 257 122 261 91 245Z" fill="url(#meadowA)" stroke="#d5c88f" stroke-width="7"/>
+      <!-- ridge line and rocky peaks -->
+      <path d="M157 188 L199 126 225 160 263 93 300 157 344 79 383 148 424 111 461 174 435 191 399 176 369 202 333 178 298 205 264 180 227 207 191 184Z" fill="#71805c"/>
+      <path d="M199 126l18 26-19-7-16 20zM263 93l22 42-20-12-18 27zM344 79l22 44-20-12-19 29zM424 111l19 36-20-11-16 25z" fill="#c7c2a5" opacity=".9"/>
+      <!-- wide open building plain -->
+      <path d="M118 216 Q165 184 218 201 Q260 182 305 205 Q352 192 400 211 Q438 204 478 221 L461 253 Q420 263 379 246 Q333 269 292 245 Q244 267 205 244 Q161 260 130 243Z" fill="#82985b"/>
+      <!-- natural harbor inlet -->
+      <path d="M475 189 Q509 195 516 221 Q515 244 486 254 Q455 263 432 247 Q416 233 426 213 Q440 193 475 189Z" fill="#28647a" stroke="#d3c28c" stroke-width="5"/>
+      <!-- coast road hint -->
+      <path d="M119 237 Q176 219 219 228 T317 225 Q369 223 414 235" fill="none" stroke="#c8b58a" stroke-width="5" stroke-dasharray="5 8" opacity=".9"/>
+      <!-- tree clusters -->
+      <g fill="#244b37"><path d="M109 212l10-29 10 29zM135 246l9-25 9 25zM181 208l8-23 8 23zM448 220l9-25 9 25zM489 264l10-27 10 27zM389 251l9-23 9 23z"/></g>
+      <g fill="#d8c99c"><circle cx="485" cy="220" r="4"/><circle cx="469" cy="239" r="3"/><circle cx="450" cy="225" r="3"/></g>
+    </svg>
+    <div class="hybrid-copy"><h3>أ — خليج أوسع وسهول أكثر</h3><p>منطقة بناء مركزية واسعة، جبلية في الخلف، ومدخل خليج واضح للمرفأ. أسهل للبناء الحر ورسم الطرق.</p></div>
+  </div>
+  <div class="hybrid-option" data-choice="mountain-forward" onclick="toggleSelect(this)">
+    <svg class="hybrid-art" viewBox="0 0 620 405" role="img" aria-label="جزيرة جبلية أكثر مع خليج طبيعي وسهول في الوادي">
+      <defs><linearGradient id="waterB" x2="0" y2="1"><stop stop-color="#28647a"/><stop offset="1" stop-color="#102b43"/></linearGradient></defs>
+      <rect width="620" height="405" fill="url(#waterB)"/>
+      <path d="M61 235 Q70 197 111 180 L146 138 177 158 218 98 253 121 290 73 328 106 364 80 400 122 441 110 469 148 509 157 Q546 184 545 224 L513 262 481 286 440 270 408 300 370 284 339 312 298 286 262 307 224 277 186 292 151 266 112 277 78 257Z" fill="#205565" opacity=".7"/>
+      <path d="M76 228 Q84 195 119 187 L151 148 179 166 220 108 252 131 290 84 326 116 364 91 397 132 439 120 465 156 502 165 Q531 187 530 222 L502 251 475 272 438 258 407 285 371 269 340 294 300 270 263 290 226 261 188 276 154 251 116 261 89 243Z" fill="#637352" stroke="#d2c38d" stroke-width="7"/>
+      <path d="M151 148 L183 101 204 135 221 108 250 131 290 84 326 116 364 91 397 132 421 125 399 170 371 155 344 186 315 158 286 191 256 162 229 188 199 156 175 177Z" fill="#8a8a6e"/>
+      <path d="M183 101l14 25-17-6-12 17zM290 84l18 31-18-9-14 21zM364 91l18 30-17-9-14 21z" fill="#d0cbb1"/>
+      <!-- valley and stepped buildable terraces -->
+      <path d="M131 220 Q167 185 211 198 Q246 177 281 197 Q315 178 349 199 Q387 182 424 203 L408 239 Q375 249 341 232 Q307 253 274 232 Q239 253 207 231 Q173 246 145 236Z" fill="#8ba15e"/>
+      <path d="M153 213 Q200 199 237 212 M227 235 Q267 218 301 235 M314 208 Q350 195 386 213" fill="none" stroke="#c5b283" stroke-width="8" opacity=".8"/>
+      <!-- narrower enclosed harbor -->
+      <path d="M471 184 Q501 190 512 211 Q518 231 499 245 Q479 258 458 247 Q439 237 439 218 Q441 194 471 184Z" fill="#28647a" stroke="#d3c28c" stroke-width="5"/>
+      <path d="M453 239 Q414 243 389 225" fill="none" stroke="#c6b487" stroke-width="5" stroke-dasharray="5 8"/>
+      <g fill="#244b37"><path d="M102 221l10-29 10 29zM131 253l9-25 9 25zM190 216l8-23 8 23zM448 196l8-23 8 23zM489 264l10-27 10 27zM381 251l9-23 9 23zM336 175l8-23 8 23z"/></g>
+    </svg>
+    <div class="hybrid-copy"><h3>ب — جبال أكثر وسهول وادٍ</h3><p>تضاريس أوضح ووديان متدرجة، مع خليج أصغر. تحدٍ أكبر في التخطيط وممرات طرق أكثر التفافًا.</p></div>
+  </div>
+</div>
+<p class="subtitle" style="margin-top:16px">اختر التوازن الأقرب، أو أخبرني بتعديلاتك. التصور يحدد شكل الأرض فقط؛ تفاصيل المباني والطرق تأتي بعده.</p>

@@ -1,0 +1,61 @@
+<h2>كيف يعمل نطاق كوخ الحطّاب؟</h2>
+<p class="subtitle">تصور توضيحي للفكرة التي وصفتها: حجم المبنى وحلقة تأثير افتراضية لا تظهر دائمًا، لكن يمكن إظهارها عند تحديد المبنى.</p>
+<style>
+  .range-wrap{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(240px,.75fr);gap:18px;align-items:center}
+  .range-map{background:#102131;border:1px solid #344b5d;border-radius:12px;padding:12px}
+  .range-map svg{display:block;width:100%;height:auto}
+  .range-notes{background:#102131;border:1px solid #344b5d;border-radius:12px;padding:16px;line-height:1.6}
+  .range-notes h3{margin-top:0}.legend{display:grid;gap:9px;margin-top:14px}.legend-row{display:flex;align-items:center;gap:9px}.swatch{width:18px;height:18px;border-radius:4px;display:inline-block;flex:none}
+  @media(max-width:760px){.range-wrap{grid-template-columns:1fr}}
+</style>
+<div class="range-wrap">
+  <div class="range-map">
+    <svg viewBox="0 0 560 480" role="img" aria-label="خريطة شبكة افتراضية 12 في 10، كوخ حطاب 2 في 2 ضمن نطاق دائري قطره 8 مربعات، والأشجار ترفع كفاءة الإنتاج">
+      <defs>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M40 0H0V40" fill="none" stroke="#56705c" stroke-width="1" opacity=".65"/></pattern>
+        <radialGradient id="rangeFill"><stop offset="65%" stop-color="#d4ad58" stop-opacity=".16"/><stop offset="100%" stop-color="#d4ad58" stop-opacity=".03"/></radialGradient>
+      </defs>
+      <rect x="40" y="40" width="480" height="400" rx="6" fill="#6e8952"/>
+      <path d="M40 360 Q130 325 207 350 T360 342 Q437 332 520 355V440H40Z" fill="#728f59" opacity=".65"/>
+      <circle cx="280" cy="240" r="160" fill="url(#rangeFill)" stroke="#e5bd65" stroke-width="3" stroke-dasharray="8 6"/>
+      <rect x="40" y="40" width="480" height="400" fill="url(#grid)"/>
+      <!-- forest cells with clusters of trees -->
+      <g fill="#244c38" stroke="#163929" stroke-width="1">
+        <path d="M101 112l12-32 12 32zM91 126l10-26 10 26zM121 132l12-28 12 28z"/>
+        <path d="M174 91l13-34 13 34zM163 111l10-27 10 27zM195 117l11-28 11 28z"/>
+        <path d="M381 91l13-34 13 34zM370 113l10-27 10 27zM402 120l11-28 11 28z"/>
+        <path d="M454 173l13-34 13 34zM442 193l10-27 10 27zM477 203l11-29 11 29z"/>
+        <path d="M97 268l13-34 13 34zM85 287l10-27 10 27zM119 296l11-29 11 29z"/>
+        <path d="M446 293l13-34 13 34zM434 312l10-27 10 27zM468 321l11-29 11 29z"/>
+        <path d="M174 386l13-34 13 34zM162 405l10-27 10 27zM196 415l11-29 11 29z"/>
+        <path d="M374 381l13-34 13 34zM363 401l10-27 10 27zM396 414l11-29 11 29z"/>
+        <path d="M248 111l10-26 10 26zM275 86l12-31 12 31zM300 119l10-26 10 26z"/>
+        <path d="M246 352l12-31 12 31zM277 383l10-27 10 27zM305 355l12-31 12 31z"/>
+      </g>
+      <!-- 2x2 buildable footprint, four virtual cells -->
+      <rect x="240" y="200" width="80" height="80" rx="5" fill="#8d5d37" stroke="#f1d49a" stroke-width="3"/>
+      <path d="M238 206L280 177L322 206V218H238Z" fill="#4f3828" stroke="#e4c58d" stroke-width="3"/>
+      <path d="M250 210L280 190L310 210V240H250Z" fill="#bd8d50" stroke="#503b28" stroke-width="2"/>
+      <rect x="275" y="224" width="13" height="24" fill="#493729"/>
+      <text x="280" y="270" text-anchor="middle" fill="#fff5de" font-size="12" font-weight="bold">كوخ الحطّاب • 4 مربعات</text>
+      <!-- diameter annotation -->
+      <path d="M120 240H440" stroke="#fff2cf" stroke-width="2"/>
+      <path d="M120 232v16M440 232v16" stroke="#fff2cf" stroke-width="2"/>
+      <rect x="225" y="222" width="110" height="24" rx="5" fill="#152536" opacity=".94"/>
+      <text x="280" y="239" text-anchor="middle" fill="#fff2cf" font-size="13">نطاق قطره 8 مربعات</text>
+      <text x="48" y="28" fill="#dce7d4" font-size="13">شبكة حساب داخلية توضيحية — لا تظهر للاعب أثناء اللعب</text>
+    </svg>
+  </div>
+  <div class="range-notes">
+    <h3>قاعدة الإنتاج</h3>
+    <p>يشغل كوخ الحطّاب افتراضيًا <strong>4 مربعات</strong> (مثال: 2×2). حوله نطاق دائري افتراضي قطره <strong>8 مربعات</strong>.</p>
+    <p>كلما زاد عدد المربعات داخل النطاق التي تحتوي على أشجار، ارتفعت كفاءة إنتاج الخشب. المربعات مجرد حساب داخلي؛ عرض العالم يبقى حرًا بلا شبكة مرئية.</p>
+    <div class="legend">
+      <div class="legend-row"><span class="swatch" style="background:#8d5d37"></span><span>مساحة المبنى: 4 مربعات افتراضية</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#d4ad58;border:1px dashed #fff2cf"></span><span>نطاق التأثير: دائرة قطرها 8</span></div>
+      <div class="legend-row"><span class="swatch" style="background:#244c38"></span><span>المربعات المشجرة تزيد الكفاءة</span></div>
+    </div>
+    <p style="margin-bottom:0"><small>الأرقام توضيحية أولية، وليست قيم توازن نهائية.</small></p>
+  </div>
+</div>
+<p class="subtitle" style="margin-top:14px">هل هذا التمثيل يطابق فكرتك؟ ويمكنك توضيح ما إذا كانت الأشجار تُستهلك مع الإنتاج أو تبقى في مكانها.</p>

@@ -1,0 +1,60 @@
+<h2>شكل الجزيرة في النموذج الأولي</h2>
+<p class="subtitle">اختر التكوين الجغرافي الأقرب لخيالك. هذه مخططات شكلية لتحديد المساحة والساحل، وليست جودة الرسوم النهائية.</p>
+
+<style>
+  .island-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; }
+  .island-option { cursor:pointer; border:1px solid #344b5d; border-radius:12px; overflow:hidden; background:#102131; transition:transform .18s,border-color .18s; }
+  .island-option:hover { transform:translateY(-3px); border-color:#d9b66f; }
+  .island-option.selected { outline:2px solid #d9b66f; }
+  .island-art { display:block; width:100%; aspect-ratio:1.45; background:#12354a; }
+  .island-copy { padding:12px 14px 15px; }
+  .island-copy h3 { margin:0 0 6px; }
+  .island-copy p { margin:0; line-height:1.5; }
+  @media(max-width:800px){.island-options{grid-template-columns:1fr}.island-art{aspect-ratio:1.8}}
+</style>
+
+<div class="island-options">
+  <div class="island-option" data-choice="open" onclick="toggleSelect(this)">
+    <svg class="island-art" viewBox="0 0 440 290" role="img" aria-label="جزيرة عريضة ذات مساحة بناء مفتوحة">
+      <defs><linearGradient id="sea1" x2="0" y2="1"><stop stop-color="#22556b"/><stop offset="1" stop-color="#102c43"/></linearGradient><linearGradient id="land1" x2="0" y2="1"><stop stop-color="#a9a66a"/><stop offset="1" stop-color="#526b42"/></linearGradient></defs>
+      <rect width="440" height="290" fill="url(#sea1)"/>
+      <path d="M28 165 Q60 119 108 119 Q129 81 177 91 Q205 50 250 80 Q300 48 326 101 Q382 91 405 140 Q421 180 379 207 Q344 240 288 218 Q245 254 201 224 Q145 246 111 214 Q57 227 35 195Z" fill="#246171" opacity=".7"/>
+      <path d="M42 157 Q61 122 111 127 Q133 91 175 101 Q205 66 246 91 Q291 64 319 108 Q370 103 390 143 Q400 173 370 195 Q337 224 287 205 Q246 236 205 211 Q156 232 119 203 Q68 216 48 188Z" fill="url(#land1)" stroke="#d2c387" stroke-width="5"/>
+      <path d="M84 155 Q132 115 188 130 Q238 101 294 127 Q340 122 361 157 Q326 181 287 168 Q246 194 206 173 Q160 195 116 173Z" fill="#7c9a58"/>
+      <path d="M139 126 Q162 101 187 121 M221 116 Q247 95 265 119 M293 139 Q317 119 334 143" fill="none" stroke="#b3a477" stroke-width="12" opacity=".8"/>
+      <g fill="#254c37"><path d="M83 151l9-24 9 24zM103 164l8-21 8 21zM322 170l9-23 9 23zM300 187l8-20 8 20zM172 197l8-22 8 22z"/></g>
+      <path d="M93 175 Q155 148 207 156 T325 153" fill="none" stroke="#c6b58b" stroke-width="3" stroke-dasharray="4 6" opacity=".8"/>
+    </svg>
+    <div class="island-copy"><h3>أ — جزيرة واسعة مفتوحة</h3><p>مساحة داخلية كبيرة للبناء، ساحل بسيط، وتلال قليلة. الأنسب لاختبار حرية توزيع المباني والطرق.</p></div>
+  </div>
+
+  <div class="island-option" data-choice="harbor" onclick="toggleSelect(this)">
+    <svg class="island-art" viewBox="0 0 440 290" role="img" aria-label="جزيرة ذات خليج طبيعي ومرفأ">
+      <defs><linearGradient id="sea2" x2="0" y2="1"><stop stop-color="#28637a"/><stop offset="1" stop-color="#102d46"/></linearGradient></defs>
+      <rect width="440" height="290" fill="url(#sea2)"/>
+      <path d="M35 153 Q50 103 100 103 Q137 67 184 91 Q221 60 264 83 Q306 60 346 94 Q390 105 404 150 Q398 192 365 208 Q340 235 298 218 Q268 204 250 178 Q228 153 204 172 Q180 195 159 216 Q116 236 80 211 Q42 194 35 153Z" fill="#246578" opacity=".8"/>
+      <path d="M47 151 Q61 111 103 112 Q140 77 181 101 Q218 71 259 94 Q300 72 339 102 Q378 112 390 150 Q384 182 355 197 Q329 219 300 205 Q273 192 257 165 Q235 132 203 148 Q173 166 151 198 Q117 217 86 197 Q54 181 47 151Z" fill="#718b55" stroke="#d2c387" stroke-width="5"/>
+      <path d="M120 135 Q154 108 192 128 Q224 110 252 129 Q271 145 251 160 Q231 171 211 155 Q189 140 169 160 Q147 178 128 165 Q111 153 120 135Z" fill="#24637b" stroke="#cbb783" stroke-width="4"/>
+      <path d="M95 156 Q127 138 152 144 M280 123 Q313 109 341 131 M302 185 Q333 177 350 159" fill="none" stroke="#b5a274" stroke-width="12" opacity=".8"/>
+      <g fill="#284e38"><path d="M77 150l8-22 8 22zM104 178l8-20 8 20zM335 151l8-22 8 22zM317 187l8-21 8 21zM187 112l8-21 8 21z"/></g>
+      <path d="M139 148 Q166 131 190 142 M255 148 Q274 161 293 166" fill="none" stroke="#d5bd8b" stroke-width="3" stroke-dasharray="4 6"/>
+    </svg>
+    <div class="island-copy"><h3>ب — جزيرة بخليج طبيعي</h3><p>خليج داخلي يصلح لمرفأ مستقبلي، مع سهول حوله ومساحة بناء متوسطة. يعطي شكلًا ساحليًا مميزًا.</p></div>
+  </div>
+
+  <div class="island-option" data-choice="rugged" onclick="toggleSelect(this)">
+    <svg class="island-art" viewBox="0 0 440 290" role="img" aria-label="جزيرة جبلية ذات سهول ووديان">
+      <defs><linearGradient id="sea3" x2="0" y2="1"><stop stop-color="#22586e"/><stop offset="1" stop-color="#0d293f"/></linearGradient></defs>
+      <rect width="440" height="290" fill="url(#sea3)"/>
+      <path d="M39 163 Q48 126 83 117 L121 89 153 108 191 66 220 89 255 58 286 94 324 77 351 112 Q394 118 405 160 Q391 190 363 202 L326 225 287 211 248 232 211 210 175 231 138 209 99 222 65 199Z" fill="#49654a" stroke="#d1c18d" stroke-width="5"/>
+      <path d="M87 151 L122 99 151 146 180 82 215 147 254 72 289 146 322 91 355 151 321 171 288 162 254 187 217 161 183 191 151 162 117 182Z" fill="#75825b"/>
+      <path d="M122 99l17 25-17-7-12 18zM180 82l20 36-19-12-15 22zM254 72l20 38-17-10-15 23zM322 91l17 30-17-11-12 18z" fill="#c4bea1" opacity=".85"/>
+      <path d="M147 165 Q187 143 216 163 Q246 180 274 156 Q302 140 330 160 L320 190 Q286 199 257 185 Q223 205 195 184 Q169 197 148 185Z" fill="#91a363"/>
+      <path d="M167 176 Q213 160 249 179 T318 166" fill="none" stroke="#b7a574" stroke-width="12" opacity=".85"/>
+      <g fill="#254a36"><path d="M77 171l8-22 8 22zM102 188l8-21 8 21zM350 177l8-22 8 22zM298 197l8-20 8 20z"/></g>
+    </svg>
+    <div class="island-copy"><h3>ج — جزيرة جبلية متنوعة</h3><p>مرتفعات وسهول محدودة ووديان؛ منظر درامي وتحدٍ في اختيار مواقع البناء ومسارات الطرق.</p></div>
+  </div>
+</div>
+
+<p class="subtitle" style="margin-top:16px">اضغط على بطاقة لاختيار التكوين، أو اكتب رأيك في المحادثة.</p>
