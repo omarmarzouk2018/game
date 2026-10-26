@@ -73,38 +73,92 @@ body {
   cursor: pointer;
 }
 
+.scene-performance {
+  position: absolute;
+  z-index: 1;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  gap: 0.65rem;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid rgb(229 239 222 / 35%);
+  border-radius: 0.55rem;
+  background: rgb(22 43 39 / 88%);
+  color: #eef2e5;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
+  direction: rtl;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+}
+
 .scene-hints {
   position: absolute;
   z-index: 1;
   right: 1rem;
   bottom: 1rem;
-  max-width: min(28rem, calc(100% - 2rem));
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  background: rgb(255 255 255 / 62%);
-  color: rgb(24 50 58 / 82%);
-  font-size: 0.8rem;
-  line-height: 1.45;
+  max-width: min(30rem, calc(100% - 2rem));
+  padding: 0.75rem 1rem;
+  border: 1px solid rgb(229 239 222 / 30%);
+  border-radius: 0.65rem;
+  background: rgb(22 43 39 / 88%);
+  color: #eef2e5;
+  font-size: 0.82rem;
+  line-height: 1.55;
   text-align: right;
   direction: rtl;
   pointer-events: none;
+  backdrop-filter: blur(8px);
+  transition: border-color 160ms ease, background-color 160ms ease;
 }
 
 .scene-hints p {
   margin: 0;
 }
 
+.scene-rotation-hint {
+  color: #cad8c8;
+}
+
+.scene-rotation-active {
+  margin-top: 0.35rem !important;
+  color: #d4e79b;
+  font-weight: 650;
+}
+
+.scene-hints.is-rotating {
+  border-color: rgb(212 231 155 / 75%);
+  background: rgb(22 43 39 / 94%);
+}
+
 .scene-uninhabited {
-  margin-top: 0.2rem !important;
+  margin-top: 0.35rem !important;
+  color: #bdc9bc;
   font-size: 0.72rem;
-  opacity: 0.8;
 }
 
 @media (max-width: 560px) {
+  .scene-performance {
+    top: 0.5rem;
+    left: 0.5rem;
+    gap: 0.4rem;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.68rem;
+  }
+
   .scene-hints {
     right: 0.5rem;
     bottom: 0.5rem;
     max-width: calc(100% - 1rem);
-    font-size: 0.7rem;
+    padding: 0.65rem 0.8rem;
+    font-size: 0.72rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scene-hints {
+    transition: none;
   }
 }

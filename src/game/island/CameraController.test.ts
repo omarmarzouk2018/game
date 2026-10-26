@@ -15,7 +15,6 @@ function setup() {
   const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 600)
   camera.position.set(0, 12, -16)
   camera.lookAt(0, 0, 0)
-  const onRenderRequested = vi.fn()
   const controller = createCameraController({
     camera,
     element,
@@ -23,10 +22,9 @@ function setup() {
     movementBounds: new THREE.Box2(new THREE.Vector2(-10, -8), new THREE.Vector2(10, 8)),
     minDistance: 8,
     maxDistance: 40,
-    onRenderRequested,
   })
   controllers.push(controller)
-  return { camera, element, controller, onRenderRequested }
+  return { camera, element, controller }
 }
 
 afterEach(() => {
@@ -36,6 +34,29 @@ afterEach(() => {
 })
 
 describe('createCameraController', () => {
+  it('moves across the island at a responsive keyboard pace', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 600)
+    camera.position.set(0, 12, -16)
+    camera.lookAt(0, 0, 0)
+    const controller = createCameraController({
+      camera,
+      element,
+      islandCenter: new THREE.Vector3(),
+      movementBounds: new THREE.Box2(new THREE.Vector2(-100, -100), new THREE.Vector2(100, 100)),
+      minDistance: 8,
+      maxDistance: 40,
+    })
+    controllers.push(controller)
+    const before = camera.position.clone()
+
+    key('keydown', 'ArrowUp')
+    controller.update(0.5)
+
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(20)
+  })
+
   it('moves forward along the camera-relative ground plane', () => {
     const { camera, controller } = setup()
     key('keydown', 'ArrowUp')
@@ -92,6 +113,43 @@ describe('createCameraController', () => {
     expect(camera.position.length()).toBeGreaterThanOrEqual(8)
   })
 
+  it('zooms in past the full-island framing distance and backs out beyond it', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const fitDistance = 320
+    const islandCenter = new THREE.Vector3(0, 0.35, 0)
+    const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 1200)
+    camera.userData.islandFitDistance = fitDistance
+    camera.position.set(0, 0.35 + fitDistance, 0)
+    const controller = createCameraController({
+      camera,
+      element,
+      islandCenter,
+      movementBounds: new THREE.Box2(new THREE.Vector2(-10, -8), new THREE.Vector2(10, 8)),
+      minDistance: 54,
+      maxDistance: 700,
+    })
+    controllers.push(controller)
+    const startDistance = camera.position.distanceTo(islandCenter)
+
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: -1000, cancelable: true }))
+    controller.update(1)
+    const zoomedInDistance = camera.position.distanceTo(islandCenter)
+    element.dispatchEvent(new WheelEvent('wheel', { deltaY: 1000, cancelable: true }))
+    controller.update(1)
+
+    expect(zoomedInDistance).toBeLessThan(startDistance / 2)
+    expect(camera.position.distanceTo(islandCenter)).toBeGreaterThan(startDistance)
+  })
+
+  it('synchronizes zoom state when the viewport requires a wider fit', () => {
+    const { camera, controller } = setup()
+    camera.userData.islandFitDistance = 320
+    controller.setDistance(320)
+    controller.update(1)
+    expect(camera.position.length()).toBeCloseTo(320)
+  })
+
   it('rotates on Ctrl-pointer movement without a pressed mouse button', () => {
     const { camera, element, controller } = setup()
     const before = camera.position.clone()
@@ -113,6 +171,17 @@ describe('createCameraController', () => {
     controller.update(5)
     expect(camera.position.x).toBeCloseTo(freelyChosenPosition.x, 4)
     expect(camera.position.z).toBeCloseTo(freelyChosenPosition.z, 4)
+  })
+
+  it('stops rotation when the window loses focus while Ctrl is held', () => {
+    const { camera, element, controller } = setup()
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
+    key('keydown', 'Control')
+    window.dispatchEvent(new Event('blur'))
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, clientY: 0, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.x).toBeCloseTo(0)
   })
 
   it('reverses camera pitch direction when the pointer moves upward with Ctrl', () => {

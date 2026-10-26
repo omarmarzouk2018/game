@@ -8,10 +8,15 @@ import rockDiffuseUrl from '../../assets/environment/rock-09/textures/rock_09_di
 import rockArmUrl from '../../assets/environment/rock-09/textures/rock_09_arm_1k.jpg?url'
 import { createIslandTerrain, sampleIslandTerrain, type IslandTerrain } from './terrain'
 import { createCameraController } from './CameraController'
+import { createFrameRateMonitor, type FrameRateReading } from './FrameRateMonitor'
 
 export type IslandSceneHandle = {
   resize(): void
   dispose(): void
+}
+
+export type IslandSceneOptions = {
+  onFrameRateUpdate?: (reading: FrameRateReading) => void
 }
 
 const terrainSeed = 41723
@@ -23,7 +28,7 @@ function terrainAt(terrain: IslandTerrain, x: number, z: number) {
 export function createTreePlacements(terrain: IslandTerrain): Array<[number, number]> {
   const centers: Array<[number, number]> = [
     [-0.34, -0.18], [0.34, -0.18], [-0.38, 0.08], [0.38, 0.08],
-    [-0.28, 0.32], [0.28, 0.32], [-0.1, 0.34], [0.1, 0.34],
+    [-0.28, 0.14], [0.28, 0.14], [-0.1, 0.17], [0.1, 0.17],
   ]
   const placements: Array<[number, number]> = []
   centers.forEach(([centerX, centerZ], clusterIndex) => {
@@ -33,47 +38,119 @@ export function createTreePlacements(terrain: IslandTerrain): Array<[number, num
       const x = (centerX + Math.cos(angle) * radius) * terrain.width / 2
       const z = (centerZ + Math.sin(angle) * radius) * terrain.depth / 2
       const sample = terrainAt(terrain, x, z)
-      if (sample.land && sample.height <= 1.65 && !(Math.abs(x) < 13 && z < 22)) placements.push([x, z])
+      if (sample.land && sample.height <= 1.65 && z < terrain.depth * 0.25 && !(Math.abs(x) < 13 && z < 22)) placements.push([x, z])
     }
   })
   return placements
 }
 
-function makeTerrain(terrain: IslandTerrain): THREE.BufferGeometry {
+export function createRockPlacements(terrain: IslandTerrain): Array<[number, number]> {
+  const placements: Array<[number, number]> = []
+  for (let row = 8; row < terrain.segments - 8; row += 6) {
+    for (let column = 8; column < terrain.segments - 8; column += 6) {
+      const x = (column / terrain.segments - 0.5) * terrain.width
+      const z = (row / terrain.segments - 0.5) * terrain.depth
+      const sample = terrainAt(terrain, x, z)
+      const hash = Math.sin(column * 12.9898 + row * 78.233) * 43758.5453
+      if (sample.land && sample.height > 0.9 && sample.height < 3.2 && hash - Math.floor(hash) > 0.52) placements.push([x, z])
+    }
+  }
+  return placements
+}
+
+export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeometry {
+  type TerrainVertex = { x: number; y: number; z: number; color: THREE.Color }
   const side = terrain.segments + 1
-  const positions = new Float32Array(side * side * 3)
-  const colors = new Float32Array(side * side * 3)
+  const seabedLimit = -1.05
   const lowland = new THREE.Color(0x59734c)
   const meadow = new THREE.Color(0x71805a)
   const highland = new THREE.Color(0x777461)
   const rock = new THREE.Color(0xaaa398)
-  const sea = new THREE.Color(oceanColor)
-  for (let row = 0; row < side; row += 1) {
-    for (let column = 0; column < side; column += 1) {
-      const index = row * side + column
-      const height = terrain.heights[index]
-      positions[index * 3] = (column / terrain.segments - 0.5) * terrain.width
-      positions[index * 3 + 1] = terrain.landMask[index] ? height : -0.08
-      positions[index * 3 + 2] = (row / terrain.segments - 0.5) * terrain.depth
-      const color = terrain.landMask[index]
-        ? height < 0.08 ? new THREE.Color(0x9d9b79)
-          : height < 0.28 ? lowland.clone().lerp(meadow, (height - 0.08) / 0.2)
-            : height < 0.85 ? meadow.clone().lerp(highland, (height - 0.28) / 0.57)
-              : highland.clone().lerp(rock, Math.min(1, (height - 0.85) / 1.1))
-        : sea
-      colors.set([color.r, color.g, color.b], index * 3)
+  const beach = new THREE.Color(0x9d9b79)
+  const vertices: TerrainVertex[] = []
+  const indices: number[] = []
+  const vertexIds = new Map<string, number>()
+  const getTerrainVertex = (index: number): TerrainVertex => {
+    const height = terrain.heights[index]
+    const column = index % side
+    const row = Math.floor(index / side)
+    const left = terrain.heights[row * side + Math.max(0, column - 1)]
+    const right = terrain.heights[row * side + Math.min(terrain.segments, column + 1)]
+    const back = terrain.heights[Math.max(0, row - 1) * side + column]
+    const front = terrain.heights[Math.min(terrain.segments, row + 1) * side + column]
+    const slope = Math.hypot(right - left, front - back)
+    const color = height < 0.08 ? beach.clone()
+      : height < 0.28 ? lowland.clone().lerp(meadow, (height - 0.08) / 0.2)
+        : height < 0.85 ? meadow.clone().lerp(highland, (height - 0.28) / 0.57)
+          : highland.clone().lerp(rock, Math.min(1, (height - 0.85) / 2.1))
+    if (slope > 0.16) color.lerp(rock, Math.min(0.75, (slope - 0.16) * 1.8))
+    return {
+      x: ((index % side) / terrain.segments - 0.5) * terrain.width,
+      y: height,
+      z: (Math.floor(index / side) / terrain.segments - 0.5) * terrain.depth,
+      color,
     }
   }
-  const indices: number[] = []
+  const addVertex = (key: string, vertex: TerrainVertex) => {
+    const existing = vertexIds.get(key)
+    if (existing !== undefined) return existing
+    const index = vertices.push(vertex) - 1
+    vertexIds.set(key, index)
+    return index
+  }
+  const intersection = (from: TerrainVertex, to: TerrainVertex, height: number): TerrainVertex => {
+    const amount = (from.y - height) / (from.y - to.y)
+    return {
+      x: THREE.MathUtils.lerp(from.x, to.x, amount),
+      y: height,
+      z: THREE.MathUtils.lerp(from.z, to.z, amount),
+      color: beach,
+    }
+  }
+  const addClippedTriangle = (sourceIndices: number[]) => {
+    const polygon: Array<{ vertex: TerrainVertex; key: string }> = []
+    let previousIndex = sourceIndices[sourceIndices.length - 1]
+    let previous = getTerrainVertex(previousIndex)
+    let previousInside = previous.y >= seabedLimit
+    for (const currentIndex of sourceIndices) {
+      const current = getTerrainVertex(currentIndex)
+      const currentInside = current.y >= seabedLimit
+      if (currentInside !== previousInside) {
+        const first = Math.min(previousIndex, currentIndex)
+        const second = Math.max(previousIndex, currentIndex)
+        const key = `edge:${first}:${second}`
+        const point = intersection(previous, current, seabedLimit)
+        polygon.push({ vertex: point, key })
+      }
+      if (currentInside) polygon.push({ vertex: current, key: `vertex:${currentIndex}` })
+      previousIndex = currentIndex
+      previous = current
+      previousInside = currentInside
+    }
+    if (polygon.length < 3) return
+    const first = addVertex(polygon[0].key, polygon[0].vertex)
+    for (let index = 1; index < polygon.length - 1; index += 1) {
+      indices.push(first, addVertex(polygon[index].key, polygon[index].vertex), addVertex(polygon[index + 1].key, polygon[index + 1].vertex))
+    }
+  }
+
   for (let row = 0; row < terrain.segments; row += 1) {
     for (let column = 0; column < terrain.segments; column += 1) {
       const a = row * side + column
       const b = a + 1
       const c = a + side
       const d = c + 1
-      indices.push(a, c, b, b, c, d)
+      addClippedTriangle([a, c, b])
+      addClippedTriangle([b, c, d])
     }
   }
+
+  const positions = new Float32Array(vertices.length * 3)
+  const colors = new Float32Array(vertices.length * 3)
+  vertices.forEach((vertex, index) => {
+    positions.set([vertex.x, vertex.y, vertex.z], index * 3)
+    colors.set([vertex.color.r, vertex.color.g, vertex.color.b], index * 3)
+  })
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
@@ -90,10 +167,25 @@ function addOcean(
   const material = new THREE.MeshStandardMaterial({ color: oceanColor, roughness: 0.32, metalness: 0.04 })
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uOceanTime = { value: 0 }
-    shader.vertexShader = `uniform float uOceanTime;\n${shader.vertexShader}`
+    shader.fragmentShader = `uniform float uOceanTime;\nvarying vec3 vOceanWorldPosition;\n${shader.fragmentShader}`
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `#include <color_fragment>
+      float shore = 1.0 - smoothstep(105.0, 205.0, length(vOceanWorldPosition.xz));
+      float distanceFromIsland = length(vOceanWorldPosition.xz);
+      float horizonFog = smoothstep(245.0, 385.0, distanceFromIsland);
+      float glint = pow(max(0.0, sin(vOceanWorldPosition.x * 0.11 + uOceanTime * 0.35) * sin(vOceanWorldPosition.z * 0.08 - uOceanTime * 0.22)), 18.0) * 0.035;
+      vec3 waterColor = mix(vec3(0.025, 0.22, 0.30), vec3(0.12, 0.43, 0.48), shore);
+      diffuseColor.rgb = mix(waterColor, vec3(0.72, 0.816, 0.824), horizonFog) + glint;`,
+    )
+    shader.vertexShader = `uniform float uOceanTime;\nvarying vec3 vOceanWorldPosition;\n${shader.vertexShader}`
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      '#include <worldpos_vertex>\nvOceanWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;',
+    )
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
-      `#include <begin_vertex>\ntransformed.z += sin(position.x * 0.045 + uOceanTime * 0.35) * 0.012 + sin(position.y * 0.06 - uOceanTime * 0.22) * 0.008;`,
+      `#include <begin_vertex>\ntransformed.z += sin(position.x * 0.045 + uOceanTime * 0.35) * 0.012 + sin(position.y * 0.06 - uOceanTime * 0.22) * 0.008 + sin(position.x * 0.12 + position.y * 0.09 + uOceanTime * 0.18) * 0.004;`,
     )
     material.userData.oceanTime = shader.uniforms.uOceanTime
   }
@@ -142,11 +234,10 @@ function addInstances(
     for (const item of material) resources.add(item)
     resources.add(mesh.geometry)
     const matrices: THREE.Matrix4[] = []
-    const treePositions = createTreePlacements(terrain)
-    const placements = kind === 'tree' ? treePositions : treePositions.filter((_, index) => index % 3 === 0)
+    const placements = kind === 'tree' ? createTreePlacements(terrain) : createRockPlacements(terrain)
     for (const [x, z] of placements) {
       const sample = terrainAt(terrain, x, z)
-      if (!sample.land || sample.height > 1.65 || (kind === 'tree' && Math.abs(x) < 13 && z < 22)) continue
+      if (!sample.land || (kind === 'tree' && sample.height > 1.65) || (kind === 'tree' && Math.abs(x) < 13 && z < 22)) continue
       const matrix = new THREE.Matrix4()
       const scale = 0.65 + ((Math.abs(x * 13 + z * 7) % 21) / 100)
       matrix.compose(
@@ -170,6 +261,7 @@ function addInstances(
 export async function createIslandScene(
   container: HTMLElement,
   onFatalError: (message: string) => void,
+  options: IslandSceneOptions = {},
 ): Promise<IslandSceneHandle> {
   const resources = new Set<THREE.Material | THREE.BufferGeometry>()
   let renderer: THREE.WebGLRenderer | undefined
@@ -179,6 +271,9 @@ export async function createIslandScene(
   let disposed = false
   let cameraController: ReturnType<typeof createCameraController> | undefined
   let previousFrameTime = 0
+  let lastFrameRateNotification = 0
+  let lastFrameRateState: FrameRateReading['state'] = 'measuring'
+  const frameRateMonitor = createFrameRateMonitor()
   const noop: IslandSceneHandle = { resize() {}, dispose() {} }
   try {
     const terrain = createIslandTerrain(terrainSeed)
@@ -186,13 +281,16 @@ export async function createIslandScene(
       throw new Error('بيانات التضاريس غير مكتملة')
     }
     const scene = new THREE.Scene()
-    scene.background = new THREE.Color(0xc8d9d7)
-    scene.fog = new THREE.Fog(0xc8d9d7, 180, 420)
-    const camera = new THREE.PerspectiveCamera(42, Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight), 0.1, 1200)
+    scene.background = new THREE.Color(0xb8d0d2)
+    scene.fog = new THREE.Fog(0xb8d0d2, 400, 1400)
+    const camera = new THREE.PerspectiveCamera(42, Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight), 0.1, 2400)
     const islandCenter = new THREE.Vector3(0, 0.35, 0)
-    const initialTilt = Math.acos(100 / Math.hypot(112, 100, 135))
+    const initialTilt = 1.2
     const initialAzimuth = Math.atan2(112, -135)
-    const viewRadius = Math.hypot(82, 2.5, 82)
+    const maximumHeight = terrain.heights.reduce((maximum, height) => Math.max(maximum, height), 0)
+    const terrainHalfWidth = terrain.width / 2
+    const terrainHalfDepth = terrain.depth / 2
+    const viewRadius = Math.hypot(terrainHalfWidth, maximumHeight - islandCenter.y, terrainHalfDepth)
     const getFitDistance = (aspect: number) => {
       const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2)
       const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * aspect)
@@ -201,8 +299,8 @@ export async function createIslandScene(
     const fitDistance = getFitDistance(camera.aspect)
     const fog = scene.fog as THREE.Fog
     const updateFogForFitDistance = (distance: number) => {
-      fog.near = Math.max(180, distance * 0.55)
-      fog.far = Math.max(420, distance * 1.5)
+      fog.near = Math.max(360, distance * 1.12)
+      fog.far = Math.max(1500, distance * 3.2)
     }
     updateFogForFitDistance(fitDistance)
     camera.userData.islandFitDistance = fitDistance
@@ -216,16 +314,20 @@ export async function createIslandScene(
     camera.lookAt(islandCenter)
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.domElement.style.width = '100%'
+    renderer.domElement.style.height = '100%'
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.12
+    renderer.toneMappingExposure = 0.96
     renderer.shadowMap.enabled = true
     renderer.shadowMap.type = THREE.PCFShadowMap
+    renderer.shadowMap.autoUpdate = false
+    renderer.shadowMap.needsUpdate = true
     container.appendChild(renderer.domElement)
 
-    const hemisphere = new THREE.HemisphereLight(0xdbe9e5, 0x665b45, 2.0)
+    const hemisphere = new THREE.HemisphereLight(0xdbe9e5, 0x665b45, 1.25)
     scene.add(hemisphere)
-    const sunlight = new THREE.DirectionalLight(0xffe0b2, 3.2)
+    const sunlight = new THREE.DirectionalLight(0xffe0b2, 2.15)
     sunlight.position.set(-55, 85, -35)
     sunlight.castShadow = true
     sunlight.shadow.mapSize.set(2048, 2048)
@@ -235,10 +337,10 @@ export async function createIslandScene(
     sunlight.shadow.camera.bottom = -75
     sunlight.shadow.bias = -0.0002
     scene.add(sunlight)
-    const fill = new THREE.AmbientLight(0xc1d8d9, 0.35)
+    const fill = new THREE.AmbientLight(0xc1d8d9, 0.22)
     scene.add(fill)
 
-    const terrainGeometry = makeTerrain(terrain)
+    const terrainGeometry = createTerrainGeometry(terrain)
     const terrainMaterial = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0 })
     resources.add(terrainGeometry)
     resources.add(terrainMaterial)
@@ -279,6 +381,7 @@ export async function createIslandScene(
           return
         }
         addInstances(scene, model, terrain, resources, kind)
+        if (renderer) renderer.shadowMap.needsUpdate = true
       } catch (error) {
         console.warn(`Optional environment ${label} model failed to load; terrain will remain available.`, error)
       } finally {
@@ -301,29 +404,47 @@ export async function createIslandScene(
         const viewDirection = camera.position.clone().sub(currentTarget).normalize()
         camera.position.copy(currentTarget).addScaledVector(viewDirection, requiredFitDistance)
         camera.lookAt(currentTarget)
+        cameraController?.setDistance(requiredFitDistance)
       }
       renderer.setSize(width, height, false)
     }
+    const publishFrameRate = (reading: FrameRateReading, time: number) => {
+      if (!options.onFrameRateUpdate) return
+      if (reading.state === lastFrameRateState && reading.state !== 'active') return
+      if (reading.state === 'active' && time - lastFrameRateNotification < 500) return
+      lastFrameRateState = reading.state
+      lastFrameRateNotification = time
+      options.onFrameRateUpdate(reading)
+    }
+    const onVisibilityChange = () => {
+      frameRateMonitor.reset()
+      const reading = frameRateMonitor.record(performance.now(), !document.hidden)
+      publishFrameRate(reading, performance.now())
+    }
     const render = (time: number) => {
       if (disposed || !renderer) return
+      if (document.hidden) {
+        frameRateMonitor.record(time, false)
+        animationFrame = window.requestAnimationFrame(render)
+        return
+      }
       if (startTime === 0) startTime = time
       const deltaSeconds = previousFrameTime === 0 ? 0 : (time - previousFrameTime) / 1000
       previousFrameTime = time
       cameraController?.update(deltaSeconds)
+      updateFogForFitDistance(camera.position.distanceTo(islandCenter))
       animateOcean((time - startTime) / 1000)
       renderer.render(scene, camera)
+      publishFrameRate(frameRateMonitor.record(time), time)
       animationFrame = window.requestAnimationFrame(render)
     }
     cameraController = createCameraController({
       camera,
       element: renderer.domElement,
       islandCenter,
-      movementBounds: new THREE.Box2(new THREE.Vector2(-68, -68), new THREE.Vector2(68, 68)),
+      movementBounds: new THREE.Box2(new THREE.Vector2(-terrainHalfWidth, -terrainHalfDepth), new THREE.Vector2(terrainHalfWidth, terrainHalfDepth)),
       minDistance: 54,
-      maxDistance: 250,
-      onRenderRequested: () => {
-        if (!disposed) renderer?.render(scene, camera)
-      },
+      maxDistance: 700,
     })
     const dispose = () => {
       if (disposed) return
@@ -333,6 +454,8 @@ export async function createIslandScene(
       revokeRockUrl()
       window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('resize', resize)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      options.onFrameRateUpdate?.({ state: 'paused', fps: null, frameTimeMs: null })
       scene.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           resources.add(object.geometry)
@@ -351,6 +474,7 @@ export async function createIslandScene(
       renderer = undefined
     }
     window.addEventListener('resize', resize)
+    document.addEventListener('visibilitychange', onVisibilityChange)
     resize()
     render(0)
     return { resize, dispose }

@@ -7,14 +7,13 @@ export type CameraControllerOptions = {
   movementBounds: THREE.Box2
   minDistance: number
   maxDistance: number
-  onRenderRequested: () => void
 }
 
-const movementSpeed = 28
-const wheelZoomFactor = 0.0015
-const pointerRotationFactor = 0.006
-const rotationRate = 14
-const zoomRate = 10
+const movementSpeed = 42
+const wheelZoomFactor = 0.003
+const pointerRotationFactor = 0.012
+const rotationRate = 24
+const zoomRate = 16
 const minPolarAngle = 0.12
 const maxPolarAngle = Math.PI / 2 - 0.08
 
@@ -26,13 +25,14 @@ function isTextEntryFocused(): boolean {
 
 export function createCameraController(options: CameraControllerOptions): {
   update(deltaSeconds: number): void
+  setDistance(distance: number): void
   dispose(): void
 } {
-  const { camera, element, islandCenter, movementBounds, minDistance, maxDistance, onRenderRequested } = options
+  const { camera, element, islandCenter, movementBounds, minDistance, maxDistance } = options
   const target = islandCenter.clone()
   const offset = camera.position.clone().sub(target)
-  const getMinimumDistance = () => Math.max(minDistance, Number(camera.userData.islandFitDistance) || 0)
-  const getMaximumDistance = () => Math.max(maxDistance, getMinimumDistance())
+  const getMinimumDistance = () => Math.max(1, minDistance)
+  const getMaximumDistance = () => Math.max(maxDistance, Number(camera.userData.islandFitDistance) || 0, getMinimumDistance())
   let distance = THREE.MathUtils.clamp(offset.length(), getMinimumDistance(), getMaximumDistance())
   let desiredDistance = distance
   let polarAngle = THREE.MathUtils.clamp(
@@ -82,6 +82,12 @@ export function createCameraController(options: CameraControllerOptions): {
     pressedKeys.delete(event.key)
   }
 
+  const onWindowBlur = () => {
+    controlPressed = false
+    pointerX = undefined
+    pointerY = undefined
+  }
+
   const onPointerMove = (event: PointerEvent) => {
     if (isTextEntryFocused()) return
     if (!controlPressed) {
@@ -97,7 +103,6 @@ export function createCameraController(options: CameraControllerOptions): {
     )
     pointerX = event.clientX
     pointerY = event.clientY
-    onRenderRequested()
   }
 
   const onWheel = (event: WheelEvent) => {
@@ -108,15 +113,20 @@ export function createCameraController(options: CameraControllerOptions): {
       getMinimumDistance(),
       getMaximumDistance(),
     )
-    onRenderRequested()
   }
 
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
+  window.addEventListener('blur', onWindowBlur)
   element.addEventListener('pointermove', onPointerMove)
   element.addEventListener('wheel', onWheel, { passive: false })
 
   return {
+    setDistance(nextDistance: number) {
+      distance = THREE.MathUtils.clamp(nextDistance, getMinimumDistance(), getMaximumDistance())
+      desiredDistance = distance
+      placeCamera()
+    },
     update(deltaSeconds: number) {
       if (disposed) return
       const delta = Math.max(0, deltaSeconds)
@@ -149,6 +159,7 @@ export function createCameraController(options: CameraControllerOptions): {
       disposed = true
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onWindowBlur)
       element.removeEventListener('pointermove', onPointerMove)
       element.removeEventListener('wheel', onWheel)
       pressedKeys.clear()

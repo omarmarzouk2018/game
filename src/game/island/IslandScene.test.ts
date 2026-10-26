@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const rendererState = vi.hoisted(() => ({
-  instances: [] as Array<{ domElement: HTMLCanvasElement; setSize: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; render: ReturnType<typeof vi.fn>; setPixelRatio: ReturnType<typeof vi.fn>; shadowMap: { enabled: boolean; type: number } }>,
+  instances: [] as Array<{ domElement: HTMLCanvasElement; setSize: ReturnType<typeof vi.fn>; dispose: ReturnType<typeof vi.fn>; render: ReturnType<typeof vi.fn>; setPixelRatio: ReturnType<typeof vi.fn>; shadowMap: { enabled: boolean; type: number; autoUpdate: boolean; needsUpdate: boolean } }>,
   failConstruction: false,
   loadFails: new Set<string>(),
   loadedUrls: [] as string[],
@@ -18,7 +18,7 @@ vi.mock('three', async (importOriginal) => {
     dispose = vi.fn()
     render = vi.fn((...args: unknown[]) => { rendererState.renderArgs.push(args) })
     setPixelRatio = vi.fn()
-    shadowMap = { enabled: false, type: 0 }
+    shadowMap = { enabled: false, type: 0, autoUpdate: true, needsUpdate: false }
     constructor() {
       if (rendererState.failConstruction) throw new Error('WebGL unavailable')
       rendererState.instances.push(this)
@@ -47,7 +47,7 @@ import rockBufferUrl from '../../assets/environment/rock-09/rock_09.bin?url'
 import rockNormalUrl from '../../assets/environment/rock-09/textures/rock_09_nor_gl_1k.jpg?url'
 import rockDiffuseUrl from '../../assets/environment/rock-09/textures/rock_09_diff_1k.jpg?url'
 import rockArmUrl from '../../assets/environment/rock-09/textures/rock_09_arm_1k.jpg?url'
-import { createIslandScene, rewriteRockDocument } from './IslandScene'
+import { createIslandScene, createRockPlacements, createTerrainGeometry, rewriteRockDocument } from './IslandScene'
 import * as terrainModule from './terrain'
 
 function makeContainer(width: number, height: number) {
@@ -141,34 +141,97 @@ describe('createIslandScene lifecycle', () => {
     expect(uris).not.toContain('textures/rock_09_arm_1k.jpg')
   })
 
-  it('keeps terrain sea vertices below the water surface', async () => {
+  it('keeps the water color out of the clipped island terrain', async () => {
     const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
-    const terrainMesh = rendererState.renderArgs[0][0] as THREE.Scene
-    const geometry = terrainMesh.children
+    const scene = rendererState.renderArgs[0][0] as THREE.Scene
+    const geometry = scene.children
       .filter((child): child is THREE.Mesh => child instanceof THREE.Mesh)
       .map((mesh) => mesh.geometry)
-      .find((candidate) => candidate.getAttribute('position').count === (128 + 1) ** 2)
+      .find((candidate) => candidate.getAttribute('color') !== undefined)
     expect(geometry).toBeDefined()
     const terrainGeometry = geometry!
     const position = terrainGeometry.getAttribute('position')
     const color = terrainGeometry.getAttribute('color')
-    const islandTerrain = terrainModule.createIslandTerrain(41723)
     const oceanVertexColor = new THREE.Color(0x397c91)
-    for (let i = 0; i < islandTerrain.heights.length; i += 1) {
-      if (!islandTerrain.landMask[i]) {
-        expect(position.getY(i)).toBeLessThan(-0.025)
-        expect(color.getX(i)).toBeCloseTo(oceanVertexColor.r)
-        expect(color.getY(i)).toBeCloseTo(oceanVertexColor.g)
-        expect(color.getZ(i)).toBeCloseTo(oceanVertexColor.b)
-      }
+    for (let i = 0; i < position.count; i += 1) {
+      expect(position.getY(i)).toBeGreaterThanOrEqual(-1.05)
+      const colorDistance = Math.hypot(
+        color.getX(i) - oceanVertexColor.r,
+        color.getY(i) - oceanVertexColor.g,
+        color.getZ(i) - oceanVertexColor.b,
+      )
+      expect(colorDistance).toBeGreaterThan(0.01)
     }
+    handle.dispose()
+  })
+
+  it('places rocks selectively on exposed mountain slopes rather than filtering tree positions', () => {
+    const terrain = terrainModule.createIslandTerrain(41723)
+    const placements = createRockPlacements(terrain)
+    expect(placements.length).toBeGreaterThan(0)
+    expect(placements.length).toBeLessThan(terrain.segments * terrain.segments / 12)
+    expect(placements.every(([x, z]) => terrainModule.sampleIslandTerrain(terrain, x, z).height > 0.9)).toBe(true)
+  })
+
+  it('continues the shoreline slope below sea level while excluding deep-water faces', () => {
+    const terrain = terrainModule.createIslandTerrain(41723)
+    const geometry = createTerrainGeometry(terrain)
+    const positions = geometry.getAttribute('position')
+    const indices = geometry.getIndex()
+    const heights = Array.from({ length: positions.count }, (_, index) => positions.getY(index))
+
+    expect(indices).not.toBeNull()
+    expect(indices!.count).toBeGreaterThan(0)
+    expect(heights.every(Number.isFinite)).toBe(true)
+    expect(Math.min(...heights)).toBeLessThan(-0.1)
+    expect(Math.min(...heights)).toBeGreaterThanOrEqual(-1.5)
+    expect(Math.max(...heights)).toBeGreaterThan(0)
+    for (let index = 0; index < indices!.count; index += 1) {
+      expect(indices!.getX(index)).toBeLessThan(positions.count)
+    }
+    geometry.dispose()
+  })
+
+  it('publishes render-frame rate readings from the animation loop', async () => {
+    const onFrameRateUpdate = vi.fn()
+    const handle = await createIslandScene(makeContainer(840, 540), vi.fn(), { onFrameRateUpdate })
+    for (let time = 16; time <= 1008; time += 16) {
+      vi.mocked(requestAnimationFrame).mock.calls.at(-1)?.[0](time)
+    }
+
+    expect(onFrameRateUpdate).toHaveBeenCalledWith(expect.objectContaining({ state: 'active', fps: expect.any(Number), frameTimeMs: expect.any(Number) }))
+    handle.dispose()
+    expect(onFrameRateUpdate).toHaveBeenLastCalledWith({ state: 'paused', fps: null, frameTimeMs: null })
+  })
+
+  it('keeps static shadows cached until scene content changes', async () => {
+    const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+
+    expect(rendererState.instances[0].shadowMap.autoUpdate).toBe(false)
+    expect(rendererState.instances[0].shadowMap.needsUpdate).toBe(true)
+
+    handle.dispose()
+  })
+
+  it('refreshes cached shadows after optional scene models load', async () => {
+    rendererState.deferLoads = true
+    const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+    const shadowMap = rendererState.instances[0].shadowMap
+    shadowMap.needsUpdate = false
+    const { Group } = await import('three')
+    for (const resolve of rendererState.pendingLoads.values()) resolve({ scene: new Group() })
+
+    await vi.waitFor(() => expect(shadowMap.needsUpdate).toBe(true))
     handle.dispose()
   })
 
   it('appends a canvas and sizes the renderer from the active container', async () => {
     const container = makeContainer(840, 540)
     const handle = await createIslandScene(container, vi.fn())
-    expect(container.querySelector('canvas')).not.toBeNull()
+    const canvas = container.querySelector('canvas')
+    expect(canvas).not.toBeNull()
+    expect(canvas?.style.width).toBe('100%')
+    expect(canvas?.style.height).toBe('100%')
     expect(rendererState.loadedUrls.some((url) => url.includes('mature-scots-pine.glb'))).toBe(true)
     expect(rendererState.loadedUrls.some((url) => url.startsWith('blob:'))).toBe(true)
     expect(rendererState.instances[0].setSize).toHaveBeenCalledWith(840, 540, false)
@@ -180,8 +243,15 @@ describe('createIslandScene lifecycle', () => {
     const handle = await createIslandScene(container, vi.fn())
     const scene = rendererState.renderArgs[0][0] as THREE.Scene
     const camera = rendererState.renderArgs[0][1] as THREE.PerspectiveCamera
-    const initialFitDistance = Math.hypot(82, 2.5, 82) / Math.sin(THREE.MathUtils.degToRad(21))
-    expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(initialFitDistance - 0.01)
+    const terrain = terrainModule.createIslandTerrain(41723)
+    const maximumHeight = Math.max(...terrain.heights)
+    const initialFitDistance = Math.hypot(terrain.width / 2, maximumHeight - 0.35, terrain.depth / 2) / Math.sin(THREE.MathUtils.degToRad(21))
+    const initialCameraOffset = camera.position.clone().sub(new THREE.Vector3(0, 0.35, 0))
+    expect(initialCameraOffset.length()).toBeGreaterThanOrEqual(initialFitDistance - 0.01)
+    const initialPolarAngle = Math.acos(initialCameraOffset.y / initialCameraOffset.length())
+    expect(initialPolarAngle).toBeGreaterThan(1.15)
+    expect(initialPolarAngle).toBeLessThan(1.4)
+    expect((scene.fog as THREE.Fog).near).toBeGreaterThanOrEqual(initialFitDistance)
     expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(initialFitDistance * 1.5)
 
     Object.defineProperty(container, 'clientWidth', { configurable: true, value: 300 })
@@ -190,9 +260,36 @@ describe('createIslandScene lifecycle', () => {
     expect(rendererState.instances[0].setSize).toHaveBeenLastCalledWith(300, 800, false)
     const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2)
     const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * (300 / 800))
-    const narrowFitDistance = Math.hypot(82, 2.5, 82) / Math.sin(horizontalHalfFov)
+    const narrowFitDistance = Math.hypot(terrain.width / 2, maximumHeight - 0.35, terrain.depth / 2) / Math.sin(horizontalHalfFov)
     expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(narrowFitDistance - 0.01)
     expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(narrowFitDistance * 1.5)
+    handle.dispose()
+  })
+
+  it('defers wheel interaction rendering to the next animation frame', async () => {
+    const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+    const renderer = rendererState.instances[0]
+    const renderCount = renderer.render.mock.calls.length
+    renderer.domElement.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, bubbles: true, cancelable: true }))
+
+    expect(renderer.render).toHaveBeenCalledTimes(renderCount)
+    handle.dispose()
+  })
+
+  it('extends fog visibility when the camera zooms farther out', async () => {
+    const container = makeContainer(840, 540)
+    const handle = await createIslandScene(container, vi.fn())
+    const scene = rendererState.renderArgs[0][0] as THREE.Scene
+    const camera = rendererState.renderArgs[0][1] as THREE.PerspectiveCamera
+    const canvas = rendererState.instances[0].domElement
+    const initialFar = (scene.fog as THREE.Fog).far
+
+    canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: 1000, bubbles: true, cancelable: true }))
+    vi.mocked(requestAnimationFrame).mock.calls.at(-1)?.[0](16)
+    vi.mocked(requestAnimationFrame).mock.calls.at(-1)?.[0](1000)
+
+    expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThan(300)
+    expect((scene.fog as THREE.Fog).far).toBeGreaterThan(initialFar)
     handle.dispose()
   })
 

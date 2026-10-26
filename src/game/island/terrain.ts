@@ -14,8 +14,8 @@ export type IslandTerrain = {
 }
 
 const DEFAULT_SEGMENTS = 128
-const ISLAND_WIDTH = 140
-const ISLAND_DEPTH = 140
+const ISLAND_WIDTH = 220
+const ISLAND_DEPTH = 220
 
 // Normalized island coordinates span [-0.5, 0.5] on each axis; positive z is the rear.
 function seededRandom(seed: number): () => number {
@@ -43,25 +43,30 @@ function gaussian(x: number, z: number, centerX: number, centerZ: number, radius
 function heightAt(x: number, z: number, random: number): number {
   const normalizedX = x / (ISLAND_WIDTH / 2)
   const normalizedZ = z / (ISLAND_DEPTH / 2)
-  const radialNoise = 0.035 * Math.sin(normalizedX * 11 + 0.7) * Math.cos(normalizedZ * 9 - 0.4)
-    + 0.018 * Math.sin(normalizedX * 17 + normalizedZ * 13)
-  const radius = Math.sqrt((normalizedX / 0.94) ** 2 + (normalizedZ / 0.94) ** 2) + radialNoise
-  const island = 1 - smoothstep(0.72, 1, radius)
-
+  const radialNoise = 0.045 * Math.sin(normalizedX * 11 + 0.7) * Math.cos(normalizedZ * 9 - 0.4)
+    + 0.022 * Math.sin(normalizedX * 17 + normalizedZ * 13)
+  const radius = Math.sqrt((normalizedX / 1.18) ** 2 + (normalizedZ / 1.18) ** 2) + radialNoise
+  const island = 1 - smoothstep(0.88, 1.16, radius)
+  const mapEdge = Math.max(Math.abs(normalizedX), Math.abs(normalizedZ))
+  const edgeFalloff = 1 - smoothstep(0.88, 0.995, mapEdge)
+  const islandFootprint = island * edgeFalloff
   // A broad notch opens the western coast while leaving the adjacent inland shore intact.
-  const harbor = gaussian(normalizedX, normalizedZ, -0.77, 0, 0.17, 0.5)
-  const harborCut = Math.max(0, 1 - harbor * 1.5)
+  const harbor = gaussian(normalizedX, normalizedZ, -0.68, 0, 0.055, 0.5)
+  const harborCut = 1 - smoothstep(0.35, 0.7, harbor)
 
-  const plains = 0.16 + 0.035 * Math.sin(normalizedX * 5.2 + 0.3) * Math.cos(normalizedZ * 4.6)
-    + 0.018 * Math.sin(normalizedX * 8.1 - normalizedZ * 5.3)
-  const ridgeBand = smoothstep(0.08, 0.24, normalizedZ) * (1 - smoothstep(0.62, 0.82, normalizedZ))
-  const ridge = ridgeBand * 0.9
-  const peaks = 1.8 * gaussian(normalizedX, normalizedZ, -0.44, 0.68, 0.13, 0.17)
-    + 1.85 * gaussian(normalizedX, normalizedZ, 0.44, 0.68, 0.14, 0.17)
-    + 0.85 * gaussian(normalizedX, normalizedZ, 0.03, 0.68, 0.12, 0.12)
-  const variation = (random - 0.5) * 0.018
-  const landHeight = Math.max(0, (plains + ridge + peaks + variation) * island * harborCut)
-  return landHeight < 0.008 ? 0 : landHeight
+  const plains = 0.65 + 0.08 * Math.sin(normalizedX * 5.2 + 0.3) * Math.cos(normalizedZ * 4.6)
+    + 0.045 * Math.sin(normalizedX * 8.1 - normalizedZ * 5.3)
+  const broadRelief = 0.7 * Math.sin(normalizedX * 3.6 + 0.4) * Math.cos(normalizedZ * 3.1 - 0.2)
+    + 0.32 * Math.sin(normalizedX * 6.2 - normalizedZ * 2.4)
+  const ridgeBand = smoothstep(0.08, 0.2, normalizedZ) * (1 - smoothstep(0.72, 0.9, normalizedZ))
+  const rearRidge = ridgeBand * (0.85 + 0.12 * Math.sin(normalizedX * 8) + 0.08 * Math.sin(normalizedX * 19))
+  const summitCenters = [-0.49, -0.27, -0.04, 0.2, 0.45]
+  const lowHills = summitCenters.reduce((sum, center, index) => sum
+    + (index % 2 === 0 ? 0.6 : 0.45) * gaussian(normalizedX, normalizedZ, center, 0.45, 0.11, 0.15), 0)
+  const variation = (random - 0.5) * 0.025
+  const inlandHeight = Math.max(0.35, plains + broadRelief + rearRidge + lowHills + variation)
+  const islandCoverage = islandFootprint * harborCut
+  return inlandHeight * islandCoverage - 1.1 * (1 - islandCoverage)
 }
 
 export function createIslandTerrain(seed: number, segments = DEFAULT_SEGMENTS): IslandTerrain {

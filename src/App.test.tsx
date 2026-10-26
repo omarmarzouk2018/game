@@ -64,6 +64,18 @@ describe('App island scene lifecycle', () => {
     await act(async () => pending.resolve({ resize: vi.fn(), dispose: vi.fn() }))
   })
 
+  it('shows active rotation feedback only while Ctrl is held', async () => {
+    sceneState.create.mockResolvedValue({ resize: vi.fn(), dispose: vi.fn() })
+    render(<App />)
+    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument())
+
+    fireEvent.keyDown(window, { key: 'Control' })
+    expect(screen.getByText('الدوران نشط · حرّك المؤشر')).toBeInTheDocument()
+
+    fireEvent.keyUp(window, { key: 'Control' })
+    expect(screen.queryByText('الدوران نشط · حرّك المؤشر')).not.toBeInTheDocument()
+  })
+
   it('shows the canvas region and Arabic control hints after successful initialization', async () => {
     const handle = { resize: vi.fn(), dispose: vi.fn() }
     sceneState.create.mockImplementation(async (container: HTMLElement) => {
@@ -78,6 +90,20 @@ describe('App island scene lifecycle', () => {
     expect(screen.getByText(/عجلة الفأرة/)).toBeInTheDocument()
     expect(screen.getByText(/Ctrl/)).toBeInTheDocument()
     expect(screen.getByText('الجزيرة غير مأهولة')).toBeInTheDocument()
+  })
+
+  it('shows live frame-rate readings from the scene and resets on a scene restart', async () => {
+    const handle = { resize: vi.fn(), dispose: vi.fn() }
+    sceneState.create.mockResolvedValue(handle)
+    render(<App />)
+    await waitFor(() => expect(sceneState.create).toHaveBeenCalledOnce())
+    const options = sceneState.create.mock.calls[0][2] as { onFrameRateUpdate: (reading: { state: 'active' | 'paused'; fps: number | null; frameTimeMs: number | null }) => void }
+
+    act(() => options.onFrameRateUpdate({ state: 'active', fps: 60, frameTimeMs: 16.7 }))
+    expect(screen.getByLabelText('أداء العرض')).toHaveTextContent('60 FPS · 16.7 مللي ثانية')
+
+    act(() => options.onFrameRateUpdate({ state: 'paused', fps: null, frameTimeMs: null }))
+    expect(screen.getByLabelText('أداء العرض')).toHaveTextContent('العرض متوقف')
   })
 
   it('shows an Arabic fatal error and retry action when initialization rejects', async () => {
