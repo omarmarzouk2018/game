@@ -13,6 +13,7 @@ export type CameraControllerOptions = {
 const movementSpeed = 28
 const wheelZoomFactor = 0.0015
 const pointerRotationFactor = 0.006
+const rotationRate = 14
 const zoomRate = 10
 const minPolarAngle = 0.12
 const maxPolarAngle = Math.PI / 2 - 0.08
@@ -39,7 +40,9 @@ export function createCameraController(options: CameraControllerOptions): {
     minPolarAngle,
     maxPolarAngle,
   )
+  let desiredPolarAngle = polarAngle
   let azimuth = Math.atan2(offset.x, offset.z)
+  let desiredAzimuth = azimuth
   let controlPressed = false
   let pointerX: number | undefined
   let pointerY: number | undefined
@@ -86,15 +89,14 @@ export function createCameraController(options: CameraControllerOptions): {
       pointerY = event.clientY
       return
     }
-    if (pointerX !== undefined) azimuth -= (event.clientX - pointerX) * pointerRotationFactor
-    if (pointerY !== undefined) polarAngle = THREE.MathUtils.clamp(
-      polarAngle + (event.clientY - pointerY) * pointerRotationFactor,
+    if (pointerX !== undefined) desiredAzimuth -= (event.clientX - pointerX) * pointerRotationFactor
+    if (pointerY !== undefined) desiredPolarAngle = THREE.MathUtils.clamp(
+      desiredPolarAngle - (event.clientY - pointerY) * pointerRotationFactor,
       minPolarAngle,
       maxPolarAngle,
     )
     pointerX = event.clientX
     pointerY = event.clientY
-    placeCamera()
     onRenderRequested()
   }
 
@@ -136,7 +138,10 @@ export function createCameraController(options: CameraControllerOptions): {
         }
       }
       const zoomBlend = 1 - Math.exp(-zoomRate * delta)
+      const rotationBlend = 1 - Math.exp(-rotationRate * delta)
       distance += (desiredDistance - distance) * zoomBlend
+      azimuth += Math.atan2(Math.sin(desiredAzimuth - azimuth), Math.cos(desiredAzimuth - azimuth)) * rotationBlend
+      polarAngle += (desiredPolarAngle - polarAngle) * rotationBlend
       placeCamera()
     },
     dispose() {

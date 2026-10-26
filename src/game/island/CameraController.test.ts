@@ -107,30 +107,49 @@ describe('createCameraController', () => {
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
     key('keydown', 'Control')
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 112, clientY: 0, bubbles: true }))
+    controller.update(1)
     key('keyup', 'Control')
     const freelyChosenPosition = camera.position.clone()
     controller.update(5)
-    expect(camera.position.x).toBeCloseTo(freelyChosenPosition.x, 5)
-    expect(camera.position.z).toBeCloseTo(freelyChosenPosition.z, 5)
+    expect(camera.position.x).toBeCloseTo(freelyChosenPosition.x, 4)
+    expect(camera.position.z).toBeCloseTo(freelyChosenPosition.z, 4)
   })
 
-  it('changes camera pitch from vertical Ctrl-pointer movement', () => {
-    const { camera, element } = setup()
+  it('reverses camera pitch direction when the pointer moves upward with Ctrl', () => {
+    const { camera, element, controller } = setup()
     const initialY = camera.position.y
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
     key('keydown', 'Control')
-    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 80, bubbles: true }))
-    expect(camera.position.y).not.toBeCloseTo(initialY)
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: -80, bubbles: true }))
+    controller.update(1)
+    expect(camera.position.y).toBeLessThan(initialY)
+  })
+
+  it('eases camera rotation toward the pointer-selected direction', () => {
+    const { camera, element, controller } = setup()
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
+    key('keydown', 'Control')
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, clientY: 0, bubbles: true }))
+    const initialPosition = camera.position.clone()
+
+    controller.update(0.05)
+    const easedPosition = camera.position.clone()
+    controller.update(1)
+
+    expect(easedPosition.distanceTo(initialPosition)).toBeGreaterThan(0)
+    expect(easedPosition.distanceTo(initialPosition)).toBeLessThan(camera.position.distanceTo(initialPosition))
   })
 
   it('clamps camera pitch to prevent near-vertical and inverted views', () => {
-    const { camera, element } = setup()
+    const { camera, element, controller } = setup()
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
     key('keydown', 'Control')
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: -100000, bubbles: true }))
+    controller.update(1)
     const nearlyTopDownAngle = camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))
     expect(nearlyTopDownAngle).toBeGreaterThan(0.1)
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 100000, bubbles: true }))
+    controller.update(1)
     const shallowAngle = camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))
     expect(shallowAngle).toBeLessThan(Math.PI / 2)
     expect(shallowAngle).toBeGreaterThan(0)
