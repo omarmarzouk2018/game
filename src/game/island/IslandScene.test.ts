@@ -5,6 +5,8 @@ const rendererState = vi.hoisted(() => ({
   failConstruction: false,
   loadFails: new Set<string>(),
   loadedUrls: [] as string[],
+  pendingLoads: new Map<string, (result: { scene: import('three').Group }) => void>(),
+  deferLoads: false,
   renderArgs: [] as unknown[][],
 }))
 
@@ -31,6 +33,9 @@ vi.mock('three/addons/loaders/GLTFLoader.js', () => ({
       rendererState.loadedUrls.push(url)
       if ([...rendererState.loadFails].some((assetName) => url.includes(assetName))) throw new Error(`failed ${url}`)
       const { Group } = await import('three')
+      if (rendererState.deferLoads) {
+        return new Promise((resolve) => rendererState.pendingLoads.set(url, (result) => resolve(result)))
+      }
       return { scene: new Group() }
     }
   },
@@ -59,6 +64,8 @@ afterEach(() => {
   rendererState.instances.length = 0
   rendererState.failConstruction = false
   rendererState.loadFails.clear()
+  rendererState.pendingLoads.clear()
+  rendererState.deferLoads = false
   rendererState.loadedUrls.length = 0
   rendererState.renderArgs.length = 0
   document.body.innerHTML = ''
@@ -66,6 +73,53 @@ afterEach(() => {
 })
 
 describe('createIslandScene lifecycle', () => {
+  it('returns a disposable handle while optional model loads are pending', async () => {
+    rendererState.deferLoads = true
+    const container = makeContainer(840, 540)
+    const handlePromise = createIslandScene(container, vi.fn())
+    expect(handlePromise).toBeInstanceOf(Promise)
+    const handle = await handlePromise
+    expect(handle).toHaveProperty('dispose')
+    expect(container.querySelector('canvas')).not.toBeNull()
+    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(2))
+    handle.dispose()
+    const { Group } = await import('three')
+    for (const resolve of rendererState.pendingLoads.values()) resolve({ scene: new Group() })
+  })
+
+  it('does not render after disposal and releases late model resources and blob URLs', async () => {
+    rendererState.deferLoads = true
+    const container = makeContainer(840, 540)
+    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL')
+    const handlePromise = createIslandScene(container, vi.fn())
+    expect(handlePromise).toBeInstanceOf(Promise)
+    const handle = await handlePromise
+    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(2))
+    const renderer = rendererState.instances[0]
+    const renderCount = renderer.render.mock.calls.length
+    const { Group, Mesh, BoxGeometry, MeshBasicMaterial } = await import('three')
+    const geometry = new BoxGeometry()
+    const material = new MeshBasicMaterial()
+    const disposeGeometry = vi.spyOn(geometry, 'dispose')
+    const disposeMaterial = vi.spyOn(material, 'dispose')
+    const blobUrl = rendererState.loadedUrls.find((url) => url.startsWith('blob:'))!
+
+    handle.dispose()
+    for (const [url, resolve] of rendererState.pendingLoads) {
+      const loadedModel = new Group()
+      if (url === blobUrl) loadedModel.add(new Mesh(geometry, material))
+      resolve({ scene: loadedModel })
+    }
+    await vi.waitFor(() => expect(disposeGeometry).toHaveBeenCalled())
+    vi.mocked(requestAnimationFrame).mock.calls.at(-1)?.[0](16)
+
+    expect(renderer.render).toHaveBeenCalledTimes(renderCount)
+    expect(disposeGeometry).toHaveBeenCalledOnce()
+    expect(disposeMaterial).toHaveBeenCalledOnce()
+    expect(revokeObjectURL).toHaveBeenCalledWith(blobUrl)
+    expect(container.querySelector('canvas')).toBeNull()
+  })
+
   it('appends a canvas and sizes the renderer from the active container', async () => {
     const container = makeContainer(840, 540)
     const handle = await createIslandScene(container, vi.fn())

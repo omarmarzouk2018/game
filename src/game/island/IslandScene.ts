@@ -206,7 +206,13 @@ export async function createIslandScene(
       { url: pineUrl, label: 'Scots pine', kind: 'tree' as const },
       { url: rockUrl, label: 'rock', kind: 'rock' as const },
     ]
-    await Promise.all(models.map(async ({ url, label, kind }) => {
+    let rockUrlRevoked = false
+    const revokeRockUrl = () => {
+      if (rockUrlRevoked) return
+      rockUrlRevoked = true
+      URL.revokeObjectURL(rockUrl)
+    }
+    void Promise.all(models.map(async ({ url, label, kind }) => {
       try {
         const { scene: model } = await loader.loadAsync(url)
         if (disposed) {
@@ -214,7 +220,12 @@ export async function createIslandScene(
             if (child instanceof THREE.Mesh) {
               child.geometry.dispose()
               const materials = Array.isArray(child.material) ? child.material : [child.material]
-              materials.forEach((material) => material.dispose())
+              materials.forEach((material) => {
+                material.dispose()
+                for (const value of Object.values(material)) {
+                  if (value instanceof THREE.Texture) value.dispose()
+                }
+              })
             }
           })
           return
@@ -222,9 +233,10 @@ export async function createIslandScene(
         addInstances(scene, model, terrain, resources, kind)
       } catch (error) {
         console.warn(`Optional environment ${label} model failed to load; terrain will remain available.`, error)
+      } finally {
+        if (url === rockUrl) revokeRockUrl()
       }
     }))
-    URL.revokeObjectURL(rockUrl)
 
     const resize = () => {
       if (!renderer || disposed) return
@@ -244,6 +256,7 @@ export async function createIslandScene(
     const dispose = () => {
       if (disposed) return
       disposed = true
+      revokeRockUrl()
       window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('resize', resize)
       scene.traverse((object) => {
