@@ -19,7 +19,7 @@ Replaced the oversized Poly Haven Tree Small 02 candidate with Innerscene's Matu
 
 - `src/assets/credits.md`: source, author, license, attribution guidance, redistribution terms and local model/dependency paths for both assets.
 - `src/assets/environment/`: pine GLB and Rock 09 glTF with local textures/buffer.
-- `src/assets/environment.test.ts`: registry/path checks, glTF validation, local dependency and buffer-size verification, GLB chunk validation, and embedded PNG signature/termination checks.
+- `src/assets/environment.test.ts`: dynamically inventories every environment file, discovers every GLB/glTF, validates each model/dependency, and asserts exact equality between the bundled inventory and all local file paths listed in credits; also checks buffer sizes, GLB chunks, and embedded PNG signatures/termination.
 - `tsconfig.app.json`: adds the already-installed Node types needed to type-check the file-system-backed asset validation test.
 
 ## Verification
@@ -28,6 +28,13 @@ Replaced the oversized Poly Haven Tree Small 02 candidate with Innerscene's Matu
 - `npm run build`: passed (`tsc -b` and Vite production build).
 - `npm run lint`: passed.
 - `git diff --check`: passed.
+
+### Review follow-up: full bundle/credits coverage
+
+Expanded the asset test to discover every bundled GLB/glTF, validate all model dependencies, discover all file paths documented in credits, verify every documented path exists, and assert exact equality between the documented local-file set and the complete environment directory inventory. This catches unregistered files, missing/stale credits paths, and missing model dependencies.
+
+- Command: `npx vitest run src/assets/environment.test.ts`
+- Output: `Test Files 1 passed (1); Tests 1 passed (1)` (Vitest v5.0.5, 09:55:41).
 
 ## Notes
 

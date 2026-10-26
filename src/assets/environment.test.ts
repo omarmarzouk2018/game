@@ -1,14 +1,15 @@
-import { readFileSync, statSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { dirname, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const assetsDirectory = dirname(fileURLToPath(import.meta.url))
+const projectRoot = resolve(assetsDirectory, '../..')
+const environmentDirectory = resolve(assetsDirectory, 'environment')
 const credits = readFileSync(resolve(assetsDirectory, 'credits.md'), 'utf8')
-const models = [
-  'environment/mature-scots-pine.glb',
-  'environment/rock-09/rock-09.gltf',
-]
+const documentedPaths = new Set(
+  [...credits.matchAll(/`(src\/assets\/[^`]+)`/g)].map((match) => match[1]),
+)
 
 type GltfDocument = {
   asset?: { version?: string }
@@ -19,8 +20,15 @@ type GltfDocument = {
   materials?: unknown[]
 }
 
+function listFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = resolve(directory, entry.name)
+    return entry.isDirectory() ? listFiles(path) : [path]
+  })
+}
+
 function parseModel(relativeModelPath: string): GltfDocument {
-  const modelPath = resolve(assetsDirectory, relativeModelPath)
+  const modelPath = resolve(environmentDirectory, relativeModelPath)
   const file = readFileSync(modelPath)
 
   if (relativeModelPath.toLowerCase().endsWith('.glb')) {
@@ -54,15 +62,17 @@ function parseModel(relativeModelPath: string): GltfDocument {
   return JSON.parse(file.toString('utf8')) as GltfDocument
 }
 
-function assertModelAndDependencies(relativeModelPath: string) {
-  const modelPath = resolve(assetsDirectory, relativeModelPath)
+function validateModel(relativeModelPath: string): string[] {
+  const modelPath = resolve(environmentDirectory, relativeModelPath)
   const model = parseModel(relativeModelPath)
+  const modelCreditPath = `src/assets/environment/${relativeModelPath.replaceAll(sep, '/')}`
 
   expect(model.asset?.version).toBe('2.0')
   expect(model.meshes?.length).toBeGreaterThan(0)
   expect(model.materials?.length).toBeGreaterThan(0)
-  expect(credits).toContain(relativeModelPath)
+  expect(documentedPaths.has(modelCreditPath), `credits must list ${modelCreditPath}`).toBe(true)
 
+  const dependencyPaths: string[] = []
   const dependencies: Array<{ uri: string; byteLength?: number }> = [
     ...(model.buffers ?? []).filter((buffer) => buffer.uri).map((buffer) => ({ uri: buffer.uri!, byteLength: buffer.byteLength })),
     ...(model.images ?? []).filter((image) => image.uri).map((image) => ({ uri: image.uri! })),
@@ -80,11 +90,26 @@ function assertModelAndDependencies(relativeModelPath: string) {
       expect(file[file.length - 2]).toBe(0xff)
       expect(file[file.length - 1]).toBe(0xd9)
     }
+    const localPath = `src/assets/environment/${relative(environmentDirectory, dependencyPath).replaceAll(sep, '/')}`
+    expect(documentedPaths.has(localPath), `credits must list ${localPath}`).toBe(true)
+    dependencyPaths.push(dependencyPath)
   }
+
+  return [modelPath, ...dependencyPaths]
 }
 
-describe('bundled environment models', () => {
-  it.each(models)('%s has a credit record and complete local dependencies', (modelPath) => {
-    assertModelAndDependencies(modelPath)
+describe('bundled environment assets', () => {
+  it('covers every model, documented path, and bundled file', () => {
+    const inventory = listFiles(environmentDirectory)
+    const modelPaths = inventory.filter((path) => /\.(glb|gltf)$/i.test(path))
+    expect(modelPaths.length).toBeGreaterThan(0)
+
+    const discoveredPaths = new Set(modelPaths.flatMap((path) => validateModel(relative(environmentDirectory, path))))
+    const inventorySet = new Set(inventory)
+    const documentedLocalPaths = new Set([...documentedPaths].map((path) => resolve(projectRoot, path)))
+
+    expect([...documentedLocalPaths].every((path) => statSync(path).isFile())).toBe(true)
+    expect([...documentedLocalPaths].sort()).toEqual([...discoveredPaths].sort())
+    expect([...inventorySet].sort()).toEqual([...discoveredPaths].sort())
   })
 })

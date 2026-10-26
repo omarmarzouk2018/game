@@ -24,4 +24,4 @@ These models are bundled locally; runtime loading must use these local files and
 - **Attribution:** Not required. Suggested credit: “Rock 09 by Jenelle van Heerden, via Poly Haven (CC0).”
 - **Redistribution conditions:** Poly Haven's asset license permits copying, modification, redistribution, commercial use, and bundling in products, including games; attribution is appreciated but not required. These terms apply to the asset, not Poly Haven website content or API.
 - **Local model:** `src/assets/environment/rock-09/rock-09.gltf`
-- **Local dependencies:** `src/assets/environment/rock-09/rock_09.bin` and all three JPG maps in `src/assets/environment/rock-09/textures/`.
+- **Local dependencies:** `src/assets/environment/rock-09/rock_09.bin`, `src/assets/environment/rock-09/textures/rock_09_arm_1k.jpg`, `src/assets/environment/rock-09/textures/rock_09_diff_1k.jpg`, and `src/assets/environment/rock-09/textures/rock_09_nor_gl_1k.jpg`.
