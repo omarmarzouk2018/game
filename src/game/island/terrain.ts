@@ -14,8 +14,8 @@ export type IslandTerrain = {
 }
 
 const DEFAULT_SEGMENTS = 128
-const ISLAND_WIDTH = 100
-const ISLAND_DEPTH = 100
+const ISLAND_WIDTH = 140
+const ISLAND_DEPTH = 140
 
 // Normalized island coordinates span [-0.5, 0.5] on each axis; positive z is the rear.
 function seededRandom(seed: number): () => number {

@@ -42,7 +42,12 @@ vi.mock('three/addons/loaders/GLTFLoader.js', () => ({
 }))
 
 import * as THREE from 'three'
-import { createIslandScene } from './IslandScene'
+import rockDocument from '../../assets/environment/rock-09/rock-09.gltf?raw'
+import rockBufferUrl from '../../assets/environment/rock-09/rock_09.bin?url'
+import rockNormalUrl from '../../assets/environment/rock-09/textures/rock_09_nor_gl_1k.jpg?url'
+import rockDiffuseUrl from '../../assets/environment/rock-09/textures/rock_09_diff_1k.jpg?url'
+import rockArmUrl from '../../assets/environment/rock-09/textures/rock_09_arm_1k.jpg?url'
+import { createIslandScene, rewriteRockDocument } from './IslandScene'
 import * as terrainModule from './terrain'
 
 function makeContainer(width: number, height: number) {
@@ -121,6 +126,45 @@ describe('createIslandScene lifecycle', () => {
     expect(container.querySelector('canvas')).toBeNull()
   })
 
+  it('rewrites every rock sidecar URI to its imported bundled URL', () => {
+    const document = rewriteRockDocument(rockDocument.replaceAll('"uri":', '"uri"  :  '))
+    const parsed = JSON.parse(document) as { buffers: Array<{ uri: string }>; images: Array<{ uri: string }> }
+    const uris = [...parsed.buffers.map(({ uri }) => uri), ...parsed.images.map(({ uri }) => uri)]
+
+    const importedUrls = [rockBufferUrl, rockNormalUrl, rockDiffuseUrl, rockArmUrl]
+    expect(uris).toEqual(importedUrls.map((url) => new URL(url, window.document.baseURI).href))
+    expect(uris.every((uri) => new URL(uri).origin === new URL(window.document.baseURI).origin)).toBe(true)
+    expect(uris.map((uri) => new URL(uri, 'blob:http://localhost/rock-document').href)).toEqual(uris)
+    expect(uris).not.toContain('rock_09.bin')
+    expect(uris).not.toContain('textures/rock_09_nor_gl_1k.jpg')
+    expect(uris).not.toContain('textures/rock_09_diff_1k.jpg')
+    expect(uris).not.toContain('textures/rock_09_arm_1k.jpg')
+  })
+
+  it('keeps terrain sea vertices below the water surface', async () => {
+    const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+    const terrainMesh = rendererState.renderArgs[0][0] as THREE.Scene
+    const geometry = terrainMesh.children
+      .filter((child): child is THREE.Mesh => child instanceof THREE.Mesh)
+      .map((mesh) => mesh.geometry)
+      .find((candidate) => candidate.getAttribute('position').count === (128 + 1) ** 2)
+    expect(geometry).toBeDefined()
+    const terrainGeometry = geometry!
+    const position = terrainGeometry.getAttribute('position')
+    const color = terrainGeometry.getAttribute('color')
+    const islandTerrain = terrainModule.createIslandTerrain(41723)
+    const oceanVertexColor = new THREE.Color(0x397c91)
+    for (let i = 0; i < islandTerrain.heights.length; i += 1) {
+      if (!islandTerrain.landMask[i]) {
+        expect(position.getY(i)).toBeLessThan(-0.025)
+        expect(color.getX(i)).toBeCloseTo(oceanVertexColor.r)
+        expect(color.getY(i)).toBeCloseTo(oceanVertexColor.g)
+        expect(color.getZ(i)).toBeCloseTo(oceanVertexColor.b)
+      }
+    }
+    handle.dispose()
+  })
+
   it('appends a canvas and sizes the renderer from the active container', async () => {
     const container = makeContainer(840, 540)
     const handle = await createIslandScene(container, vi.fn())
@@ -134,9 +178,11 @@ describe('createIslandScene lifecycle', () => {
   it('resizes from the active container and preserves full-island framing in a narrow viewport', async () => {
     const container = makeContainer(800, 600)
     const handle = await createIslandScene(container, vi.fn())
+    const scene = rendererState.renderArgs[0][0] as THREE.Scene
     const camera = rendererState.renderArgs[0][1] as THREE.PerspectiveCamera
-    const initialFitDistance = Math.hypot(60, 2.5, 60) / Math.sin(THREE.MathUtils.degToRad(21))
+    const initialFitDistance = Math.hypot(82, 2.5, 82) / Math.sin(THREE.MathUtils.degToRad(21))
     expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(initialFitDistance - 0.01)
+    expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(initialFitDistance * 1.5)
 
     Object.defineProperty(container, 'clientWidth', { configurable: true, value: 300 })
     Object.defineProperty(container, 'clientHeight', { configurable: true, value: 800 })
@@ -144,8 +190,9 @@ describe('createIslandScene lifecycle', () => {
     expect(rendererState.instances[0].setSize).toHaveBeenLastCalledWith(300, 800, false)
     const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2)
     const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * (300 / 800))
-    const narrowFitDistance = Math.hypot(60, 2.5, 60) / Math.sin(horizontalHalfFov)
+    const narrowFitDistance = Math.hypot(82, 2.5, 82) / Math.sin(horizontalHalfFov)
     expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(narrowFitDistance - 0.01)
+    expect((scene.fog as THREE.Fog).far).toBeGreaterThanOrEqual(narrowFitDistance * 1.5)
     handle.dispose()
   })
 

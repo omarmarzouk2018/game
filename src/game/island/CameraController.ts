@@ -13,8 +13,9 @@ export type CameraControllerOptions = {
 const movementSpeed = 28
 const wheelZoomFactor = 0.0015
 const pointerRotationFactor = 0.006
-const snapRate = 12
 const zoomRate = 10
+const minPolarAngle = 0.12
+const maxPolarAngle = Math.PI / 2 - 0.08
 
 function isTextEntryFocused(): boolean {
   const active = document.activeElement
@@ -33,11 +34,15 @@ export function createCameraController(options: CameraControllerOptions): {
   const getMaximumDistance = () => Math.max(maxDistance, getMinimumDistance())
   let distance = THREE.MathUtils.clamp(offset.length(), getMinimumDistance(), getMaximumDistance())
   let desiredDistance = distance
-  const polarAngle = Math.acos(THREE.MathUtils.clamp(offset.y / Math.max(offset.length(), 1e-6), -1, 1))
+  let polarAngle = THREE.MathUtils.clamp(
+    Math.acos(THREE.MathUtils.clamp(offset.y / Math.max(offset.length(), 1e-6), -1, 1)),
+    minPolarAngle,
+    maxPolarAngle,
+  )
   let azimuth = Math.atan2(offset.x, offset.z)
-  let snapTarget: number | undefined
   let controlPressed = false
   let pointerX: number | undefined
+  let pointerY: number | undefined
   const pressedKeys = new Set<string>()
   let disposed = false
 
@@ -56,7 +61,6 @@ export function createCameraController(options: CameraControllerOptions): {
     if (isTextEntryFocused()) return
     if (event.key === 'Control') {
       controlPressed = true
-      snapTarget = undefined
       return
     }
     if (event.key.startsWith('Arrow')) {
@@ -68,13 +72,8 @@ export function createCameraController(options: CameraControllerOptions): {
   const onKeyUp = (event: KeyboardEvent) => {
     if (event.key === 'Control' && controlPressed) {
       controlPressed = false
-      if (!isTextEntryFocused()) {
-        const quarterTurn = Math.PI / 2
-        snapTarget = Math.round(azimuth / quarterTurn) * quarterTurn
-      } else {
-        snapTarget = undefined
-      }
       pointerX = undefined
+      pointerY = undefined
       return
     }
     pressedKeys.delete(event.key)
@@ -84,11 +83,17 @@ export function createCameraController(options: CameraControllerOptions): {
     if (isTextEntryFocused()) return
     if (!controlPressed) {
       pointerX = event.clientX
+      pointerY = event.clientY
       return
     }
     if (pointerX !== undefined) azimuth -= (event.clientX - pointerX) * pointerRotationFactor
+    if (pointerY !== undefined) polarAngle = THREE.MathUtils.clamp(
+      polarAngle + (event.clientY - pointerY) * pointerRotationFactor,
+      minPolarAngle,
+      maxPolarAngle,
+    )
     pointerX = event.clientX
-    snapTarget = undefined
+    pointerY = event.clientY
     placeCamera()
     onRenderRequested()
   }
@@ -132,14 +137,6 @@ export function createCameraController(options: CameraControllerOptions): {
       }
       const zoomBlend = 1 - Math.exp(-zoomRate * delta)
       distance += (desiredDistance - distance) * zoomBlend
-      if (snapTarget !== undefined) {
-        const angularDifference = Math.atan2(Math.sin(snapTarget - azimuth), Math.cos(snapTarget - azimuth))
-        azimuth += angularDifference * (1 - Math.exp(-snapRate * delta))
-        if (Math.abs(angularDifference) < 0.001) {
-          azimuth = snapTarget
-          snapTarget = undefined
-        }
-      }
       placeCamera()
     },
     dispose() {

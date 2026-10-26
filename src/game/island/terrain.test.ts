@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createIslandTerrain, sampleIslandTerrain } from './terrain'
+import { createTreePlacements } from './IslandScene'
 
 // Coordinates are normalized from the island's centered world bounds:
 // x and z each run from -0.5 to 0.5, with +z toward the rear ridge.
@@ -16,6 +17,13 @@ describe('island terrain', () => {
     const repeat = createIslandTerrain(seed, segments)
     expect(repeat.heights).toEqual(terrain.heights)
     expect(repeat.landMask).toEqual(terrain.landMask)
+  })
+
+  it('uses expanded world bounds while preserving normalized island coverage', () => {
+    expect(terrain.width).toBeGreaterThan(100)
+    expect(terrain.depth).toBeGreaterThan(100)
+    expect(sample(-0.3, 0).land).toBe(true)
+    expect(sample(0.3, 0).land).toBe(true)
   })
 
   it('keeps most sampled interior locations above sea level', () => {
@@ -38,6 +46,15 @@ describe('island terrain', () => {
     const nearbyCoast = [sample(-0.27, -0.13), sample(-0.27, 0), sample(-0.27, 0.13)]
     expect(bay.every((point) => !point.land)).toBe(true)
     expect(nearbyCoast.filter((point) => point.land).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('places deterministic dense tree clusters away from the central plain and harbor', () => {
+    const placements = createTreePlacements(terrain)
+    expect(placements).toEqual(createTreePlacements(terrain))
+    expect(placements.length).toBeGreaterThan(70)
+    expect(placements.every(([x, z]) => Math.abs(x) >= 12 || z >= 22)).toBe(true)
+    expect(placements.every(([x, z]) => sampleIslandTerrain(terrain, x, z).land)).toBe(true)
+    expect(placements.some(([x, z]) => x < -35 && Math.abs(z) < 18)).toBe(false)
   })
 
   it('keeps the central buildable lowland lower than the rear ridge', () => {

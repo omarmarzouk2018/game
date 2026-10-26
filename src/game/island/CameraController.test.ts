@@ -102,28 +102,38 @@ describe('createCameraController', () => {
     expect(camera.position.x).not.toBeCloseTo(before.x)
   })
 
-  it('smoothly snaps to the nearest quarter-turn when Ctrl is released', () => {
+  it('keeps the freely chosen azimuth unchanged after Ctrl is released', () => {
     const { camera, element, controller } = setup()
-    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
     key('keydown', 'Control')
-    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 112, bubbles: true }))
-    controller.update(1)
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 112, clientY: 0, bubbles: true }))
     key('keyup', 'Control')
-    const beforeSnap = camera.position.clone()
-    controller.update(0.05)
-    expect(camera.position.distanceTo(beforeSnap)).toBeGreaterThan(0)
+    const freelyChosenPosition = camera.position.clone()
     controller.update(5)
-    expect(camera.position.x).toBeCloseTo(0, 4)
-    expect(camera.position.z).toBeLessThan(0)
+    expect(camera.position.x).toBeCloseTo(freelyChosenPosition.x, 5)
+    expect(camera.position.z).toBeCloseTo(freelyChosenPosition.z, 5)
   })
 
-  it('keeps the camera tilt fixed while moving and zooming', () => {
-    const { camera, element, controller } = setup()
-    const tilt = camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))
-    key('keydown', 'ArrowUp')
-    element.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
-    controller.update(1)
-    expect(camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))).toBeCloseTo(tilt)
+  it('changes camera pitch from vertical Ctrl-pointer movement', () => {
+    const { camera, element } = setup()
+    const initialY = camera.position.y
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
+    key('keydown', 'Control')
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 80, bubbles: true }))
+    expect(camera.position.y).not.toBeCloseTo(initialY)
+  })
+
+  it('clamps camera pitch to prevent near-vertical and inverted views', () => {
+    const { camera, element } = setup()
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 0, bubbles: true }))
+    key('keydown', 'Control')
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: -100000, bubbles: true }))
+    const nearlyTopDownAngle = camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))
+    expect(nearlyTopDownAngle).toBeGreaterThan(0.1)
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, clientY: 100000, bubbles: true }))
+    const shallowAngle = camera.getWorldDirection(new THREE.Vector3()).angleTo(new THREE.Vector3(0, -1, 0))
+    expect(shallowAngle).toBeLessThan(Math.PI / 2)
+    expect(shallowAngle).toBeGreaterThan(0)
   })
 
   it('ignores movement and rotation while a text input is focused', () => {
