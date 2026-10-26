@@ -21,6 +21,10 @@ Commands verified successfully:
 - `npm run build` — TypeScript build and Vite production build passed.
 - `git diff --check` — passed (only Git's CRLF normalization notices for the package files).
 
-## Known concerns / follow-up
+## Fix round 2 — async lifecycle teardown review
 
-No unresolved implementation concerns were identified. Camera controls remain intentionally out of scope for Task 4 and can be attached by Task 5; scene creation/disposal follows the lifecycle contract Task 6 will consume.
+The first lifecycle fix accidentally changed `createIslandScene` from Task 4's required `Promise<IslandSceneHandle>` contract to a synchronous handle. Restored the `async` function and Promise return signature while retaining immediate resolution after core scene setup; optional GLTF loads remain fire-and-forget and are not awaited. Added explicit tests for the Promise contract alongside deferred-load handle availability and disposal behavior.
+
+TDD evidence: the new Promise API assertions failed against the synchronous implementation (`expected ... to be an instance of Promise`). After restoring `async` and the Promise return type, focused lifecycle tests passed, including late model disposal/no post-disposal rendering and blob URL revocation.
+
+Verification: `npm test -- src/game/island/IslandScene.test.ts` — 8 tests passed; `npm run build` — TypeScript and Vite production build passed. No commit created.

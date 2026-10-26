@@ -20,7 +20,7 @@
 - Use only assets whose use is permitted by their licenses; record source, author, license, and attribution requirements.
 - Target approximately 60 FPS on a mid-range desktop as an optimization goal, not an unconditional guarantee.
 - Show an understandable fallback when WebGL or a required scene resource fails; do not leave a blank canvas.
-- No Git repository exists yet; do not initialize Git or create commits as part of implementation unless the user explicitly requests it.
+- Work on the isolated `feature/island-map` worktree. The user authorized local implementation commits on `feature/island-map` for task-level review; do not push or merge.
 
 ---
 
@@ -80,7 +80,7 @@ Set `test.environment` to `jsdom`, load `@testing-library/jest-dom/vitest`, and 
 
 - [ ] **Step 3: Add an App smoke test**
 
-In `src/App.test.tsx`, render `App` with the Three.js scene module mocked and assert that the scene host, the «الجزيرة غير مأهولة» label, and the control hint region exist.
+In `src/App.test.tsx`, render `App` and assert that the scene host and accessible loading/error regions exist. The scene module and the uninhabited label/control hints are added in later tasks; Task 6 extends this test with those integration assertions.
 
 - [ ] **Step 4: Run the initial application and test**
 
@@ -389,4 +389,4 @@ Expected: all tests pass and build succeeds after visual/performance adjustments
 - [x] Spec coverage: terrain, harbor, plains, highlands, forests, assets/licensing, lighting, camera controls/bounds, overlays, responsive resize, WebGL/asset failures, and approximate performance each have implementation and verification tasks.
 - [x] Scope control: no buildings, roads, economy, game save, server, multiplayer, mobile, or dynamic weather tasks are included.
 - [x] Interface consistency: `createIslandTerrain(seed, segments?)`, `sampleIslandTerrain(terrain, x, z)`, `createIslandScene(container, onFatalError)`, and `createCameraController(options)` are defined before use.
-- [x] No commit steps are included because the workspace is not currently a Git repository.
+- [x] Task-level local commits are allowed on the isolated `feature/island-map` branch; do not push or merge.
