@@ -49,13 +49,62 @@ body {
 
 .scene-loading {
   top: 1rem;
+  direction: rtl;
+  pointer-events: none;
 }
 
-.scene-error:empty {
-  display: none;
-}
-
-.scene-error:not(:empty) {
+.scene-error {
   top: 5rem;
   color: #7e1f1f;
+  direction: rtl;
+}
+
+.scene-error p {
+  margin: 0 0 0.75rem;
+}
+
+.scene-error button {
+  border: 0;
+  border-radius: 0.35rem;
+  padding: 0.5rem 0.8rem;
+  background: #7e1f1f;
+  color: white;
+  font: inherit;
+  cursor: pointer;
+}
+
+.scene-hints {
+  position: absolute;
+  z-index: 1;
+  right: 1rem;
+  bottom: 1rem;
+  max-width: min(28rem, calc(100% - 2rem));
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgb(255 255 255 / 62%);
+  color: rgb(24 50 58 / 82%);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-align: right;
+  direction: rtl;
+  pointer-events: none;
+}
+
+.scene-hints p {
+  margin: 0;
+}
+
+.scene-uninhabited {
+  margin-top: 0.2rem !important;
+  font-size: 0.72rem;
+  opacity: 0.8;
+}
+
+@media (max-width: 560px) {
+  .scene-hints {
+    right: 0.5rem;
+    bottom: 0.5rem;
+    max-width: calc(100% - 1rem);
+    font-size: 0.7rem;
+  }
 }
