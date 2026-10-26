@@ -7,6 +7,7 @@ import rockNormalUrl from '../../assets/environment/rock-09/textures/rock_09_nor
 import rockDiffuseUrl from '../../assets/environment/rock-09/textures/rock_09_diff_1k.jpg?url'
 import rockArmUrl from '../../assets/environment/rock-09/textures/rock_09_arm_1k.jpg?url'
 import { createIslandTerrain, sampleIslandTerrain, type IslandTerrain } from './terrain'
+import { createCameraController } from './CameraController'
 
 export type IslandSceneHandle = {
   resize(): void
@@ -154,6 +155,8 @@ export async function createIslandScene(
   let startTime = 0
   let animateOcean: (time: number) => void = () => {}
   let disposed = false
+  let cameraController: ReturnType<typeof createCameraController> | undefined
+  let previousFrameTime = 0
   const noop: IslandSceneHandle = { resize() {}, dispose() {} }
   try {
     const terrain = createIslandTerrain(terrainSeed)
@@ -163,9 +166,26 @@ export async function createIslandScene(
     const scene = new THREE.Scene()
     scene.background = new THREE.Color(0xc8d9d7)
     scene.fog = new THREE.Fog(0xc8d9d7, 95, 260)
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 600)
-    camera.position.set(112, 100, -135)
-    camera.lookAt(0, 0.35, 0)
+    const camera = new THREE.PerspectiveCamera(42, Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight), 0.1, 1200)
+    const islandCenter = new THREE.Vector3(0, 0.35, 0)
+    const initialTilt = Math.acos(100 / Math.hypot(112, 100, 135))
+    const initialAzimuth = Math.atan2(112, -135)
+    const viewRadius = Math.hypot(60, 2.5, 60)
+    const getFitDistance = (aspect: number) => {
+      const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2)
+      const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * aspect)
+      return viewRadius / Math.sin(Math.min(verticalHalfFov, horizontalHalfFov))
+    }
+    const fitDistance = getFitDistance(camera.aspect)
+    camera.userData.islandFitDistance = fitDistance
+    camera.userData.islandCameraTarget = islandCenter.clone()
+    const initialDistance = fitDistance
+    camera.position.set(
+      islandCenter.x + Math.sin(initialAzimuth) * Math.sin(initialTilt) * initialDistance,
+      islandCenter.y + Math.cos(initialTilt) * initialDistance,
+      islandCenter.z + Math.cos(initialAzimuth) * Math.sin(initialTilt) * initialDistance,
+    )
+    camera.lookAt(islandCenter)
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -244,18 +264,43 @@ export async function createIslandScene(
       const height = Math.max(1, container.clientHeight)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
+      const requiredFitDistance = getFitDistance(camera.aspect)
+      camera.userData.islandFitDistance = requiredFitDistance
+      const currentTarget = camera.userData.islandCameraTarget as THREE.Vector3
+      const currentDistance = camera.position.distanceTo(currentTarget)
+      if (currentDistance < requiredFitDistance) {
+        const viewDirection = camera.position.clone().sub(currentTarget).normalize()
+        camera.position.copy(currentTarget).addScaledVector(viewDirection, requiredFitDistance)
+        camera.lookAt(currentTarget)
+      }
       renderer.setSize(width, height, false)
     }
     const render = (time: number) => {
       if (disposed || !renderer) return
       if (startTime === 0) startTime = time
+      const deltaSeconds = previousFrameTime === 0 ? 0 : (time - previousFrameTime) / 1000
+      previousFrameTime = time
+      cameraController?.update(deltaSeconds)
       animateOcean((time - startTime) / 1000)
       renderer.render(scene, camera)
       animationFrame = window.requestAnimationFrame(render)
     }
+    cameraController = createCameraController({
+      camera,
+      element: renderer.domElement,
+      islandCenter,
+      movementBounds: new THREE.Box2(new THREE.Vector2(-48, -48), new THREE.Vector2(48, 48)),
+      minDistance: 54,
+      maxDistance: 250,
+      onRenderRequested: () => {
+        if (!disposed) renderer?.render(scene, camera)
+      },
+    })
     const dispose = () => {
       if (disposed) return
       disposed = true
+      cameraController?.dispose()
+      cameraController = undefined
       revokeRockUrl()
       window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('resize', resize)

@@ -41,6 +41,7 @@ vi.mock('three/addons/loaders/GLTFLoader.js', () => ({
   },
 }))
 
+import * as THREE from 'three'
 import { createIslandScene } from './IslandScene'
 import * as terrainModule from './terrain'
 
@@ -130,13 +131,21 @@ describe('createIslandScene lifecycle', () => {
     handle.dispose()
   })
 
-  it('resizes from the active container when the window changes size', async () => {
+  it('resizes from the active container and preserves full-island framing in a narrow viewport', async () => {
     const container = makeContainer(800, 600)
     const handle = await createIslandScene(container, vi.fn())
-    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 1024 })
-    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 768 })
+    const camera = rendererState.renderArgs[0][1] as THREE.PerspectiveCamera
+    const initialFitDistance = Math.hypot(60, 2.5, 60) / Math.sin(THREE.MathUtils.degToRad(21))
+    expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(initialFitDistance - 0.01)
+
+    Object.defineProperty(container, 'clientWidth', { configurable: true, value: 300 })
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 800 })
     window.dispatchEvent(new Event('resize'))
-    expect(rendererState.instances[0].setSize).toHaveBeenLastCalledWith(1024, 768, false)
+    expect(rendererState.instances[0].setSize).toHaveBeenLastCalledWith(300, 800, false)
+    const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov / 2)
+    const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * (300 / 800))
+    const narrowFitDistance = Math.hypot(60, 2.5, 60) / Math.sin(horizontalHalfFov)
+    expect(camera.position.distanceTo(new THREE.Vector3(0, 0.35, 0))).toBeGreaterThanOrEqual(narrowFitDistance - 0.01)
     handle.dispose()
   })
 
