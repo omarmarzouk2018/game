@@ -11,7 +11,7 @@ export type CameraControllerOptions = {
 
 const movementSpeed = 42
 const wheelZoomFactor = 0.003
-const pointerRotationFactor = 0.012
+const pointerRotationFactor = 0.006
 const rotationRate = 24
 const zoomRate = 16
 const minPolarAngle = 0.12
@@ -44,10 +44,14 @@ export function createCameraController(options: CameraControllerOptions): {
   let azimuth = Math.atan2(offset.x, offset.z)
   let desiredAzimuth = azimuth
   let controlPressed = false
+  let dragging = false
   let pointerX: number | undefined
   let pointerY: number | undefined
+  const originalCursor = element.style.cursor
   const pressedKeys = new Set<string>()
   let disposed = false
+
+  element.style.cursor = 'grab'
 
   const placeCamera = () => {
     const horizontalDistance = Math.sin(polarAngle) * distance
@@ -82,15 +86,46 @@ export function createCameraController(options: CameraControllerOptions): {
     pressedKeys.delete(event.key)
   }
 
-  const onWindowBlur = () => {
-    controlPressed = false
+  const stopDragging = () => {
+    if (!dragging) return
+    dragging = false
+    element.style.cursor = 'grab'
     pointerX = undefined
     pointerY = undefined
+  }
+
+  const onWindowBlur = () => {
+    controlPressed = false
+    stopDragging()
+    pointerX = undefined
+    pointerY = undefined
+  }
+
+  const onPointerDown = (event: PointerEvent) => {
+    if (isTextEntryFocused() || controlPressed || event.button !== 0) return
+    dragging = true
+    pointerX = event.clientX
+    pointerY = event.clientY
+    element.style.cursor = 'grabbing'
+  }
+
+  const onPointerUp = (event: PointerEvent) => {
+    if (event.button === 0) stopDragging()
   }
 
   const onPointerMove = (event: PointerEvent) => {
     if (isTextEntryFocused()) return
     if (!controlPressed) {
+      if (dragging && pointerX !== undefined && pointerY !== undefined) {
+        const scale = distance * 0.001
+        const deltaX = event.clientX - pointerX
+        const deltaY = event.clientY - pointerY
+        const right = new THREE.Vector3(Math.cos(azimuth), 0, -Math.sin(azimuth))
+        const forward = new THREE.Vector3(-Math.sin(azimuth), 0, -Math.cos(azimuth))
+        target.addScaledVector(right, -deltaX * scale).addScaledVector(forward, -deltaY * scale)
+        target.x = THREE.MathUtils.clamp(target.x, movementBounds.min.x, movementBounds.max.x)
+        target.z = THREE.MathUtils.clamp(target.z, movementBounds.min.y, movementBounds.max.y)
+      }
       pointerX = event.clientX
       pointerY = event.clientY
       return
@@ -118,6 +153,8 @@ export function createCameraController(options: CameraControllerOptions): {
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('blur', onWindowBlur)
+  window.addEventListener('pointerup', onPointerUp)
+  element.addEventListener('pointerdown', onPointerDown)
   element.addEventListener('pointermove', onPointerMove)
   element.addEventListener('wheel', onWheel, { passive: false })
 
@@ -160,8 +197,11 @@ export function createCameraController(options: CameraControllerOptions): {
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onWindowBlur)
+      window.removeEventListener('pointerup', onPointerUp)
+      element.removeEventListener('pointerdown', onPointerDown)
       element.removeEventListener('pointermove', onPointerMove)
       element.removeEventListener('wheel', onWheel)
+      element.style.cursor = originalCursor
       pressedKeys.clear()
     },
   }

@@ -25,3 +25,34 @@ These models are bundled locally; runtime loading must use these local files and
 - **Redistribution conditions:** Poly Haven's asset license permits copying, modification, redistribution, commercial use, and bundling in products, including games; attribution is appreciated but not required. These terms apply to the asset, not Poly Haven website content or API.
 - **Local model:** `src/assets/environment/rock-09/rock-09.gltf`
 - **Local dependencies:** `src/assets/environment/rock-09/rock_09.bin`, `src/assets/environment/rock-09/textures/rock_09_arm_1k.jpg`, `src/assets/environment/rock-09/textures/rock_09_diff_1k.jpg`, and `src/assets/environment/rock-09/textures/rock_09_nor_gl_1k.jpg`.
+
+## Pine tree (Kenney Nature Kit)
+
+- **Display name:** Pine tree
+- **Author:** Kenney (Asset Forge / Nature Kit)
+- **Source:** [Kenney Nature Kit](https://kenney.nl/assets/nature-kit)
+- **License:** CC0 1.0 Universal / Public Domain; [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- **Attribution:** Not required. Suggested credit: “Nature Kit by Kenney (CC0).”
+- **Redistribution conditions:** Free for personal, educational, and commercial game projects without attribution.
+- **Local model:** `src/assets/environment/trees/tree_pine.glb`
+
+## Deciduous tree (Kenney Nature Kit)
+
+- **Display name:** Deciduous tree
+- **Author:** Kenney (Asset Forge / Nature Kit)
+- **Source:** [Kenney Nature Kit](https://kenney.nl/assets/nature-kit)
+- **License:** CC0 1.0 Universal / Public Domain; [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- **Attribution:** Not required. Suggested credit: “Nature Kit by Kenney (CC0).”
+- **Redistribution conditions:** Free for personal, educational, and commercial game projects without attribution.
+- **Local model:** `src/assets/environment/trees/tree_default.glb`
+
+## Palm tree (Kenney Nature Kit)
+
+- **Display name:** Palm tree
+- **Author:** Kenney (Asset Forge / Nature Kit)
+- **Source:** [Kenney Nature Kit](https://kenney.nl/assets/nature-kit)
+- **License:** CC0 1.0 Universal / Public Domain; [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/).
+- **Attribution:** Not required. Suggested credit: “Nature Kit by Kenney (CC0).”
+- **Redistribution conditions:** Free for personal, educational, and commercial game projects without attribution.
+- **Local model:** `src/assets/environment/trees/tree_palm.glb`
+

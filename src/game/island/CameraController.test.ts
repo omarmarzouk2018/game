@@ -101,6 +101,25 @@ describe('createCameraController', () => {
     expect(cameraTarget.x).toBeGreaterThanOrEqual(-10)
   })
 
+  it('pans the map while dragging with the left mouse button', () => {
+    const { camera, element, controller } = setup()
+    const before = camera.position.clone()
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, clientX: 90, clientY: 50, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0)
+  })
+
+  it('shows grab cursors while hovering and dragging', () => {
+    const { element } = setup()
+    expect(element.style.cursor).toBe('grab')
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, bubbles: true }))
+    expect(element.style.cursor).toBe('grabbing')
+    element.dispatchEvent(new PointerEvent('pointerup', { button: 0, bubbles: true }))
+    expect(element.style.cursor).toBe('grab')
+  })
+
   it('zooms with the wheel and clamps distance', () => {
     const { camera, element, controller } = setup()
     const initialDistance = camera.position.length()
@@ -158,6 +177,18 @@ describe('createCameraController', () => {
     element.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, buttons: 0, bubbles: true }))
     controller.update(1)
     expect(camera.position.x).not.toBeCloseTo(before.x)
+  })
+
+  it('rotates at half the previous pointer sensitivity', () => {
+    const { camera, element, controller } = setup()
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, bubbles: true }))
+    key('keydown', 'Control')
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, bubbles: true }))
+    controller.update(1)
+
+    const azimuth = Math.atan2(camera.position.x, camera.position.z)
+    const rotation = Math.abs(Math.atan2(Math.sin(azimuth - Math.PI), Math.cos(azimuth - Math.PI)))
+    expect(rotation).toBeCloseTo(0.6, 2)
   })
 
   it('keeps the freely chosen azimuth unchanged after Ctrl is released', () => {
