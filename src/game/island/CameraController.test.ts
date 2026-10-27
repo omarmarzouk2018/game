@@ -111,6 +111,16 @@ describe('createCameraController', () => {
     expect(camera.position.distanceTo(before)).toBeGreaterThan(0)
   })
 
+  it('pans the map opposite the vertical drag direction', () => {
+    const { camera, element, controller } = setup()
+    const initialCameraZ = camera.position.z
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 20, clientY: 100, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, clientX: 20, clientY: 0, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.z).toBeLessThan(initialCameraZ)
+  })
+
   it('shows grab cursors while hovering and dragging', () => {
     const { element } = setup()
     expect(element.style.cursor).toBe('grab')

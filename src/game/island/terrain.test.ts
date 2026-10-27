@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createIslandTerrain, isBuildable, sampleIslandTerrain } from './terrain'
+import { createIslandTerrain, isBuildable, sampleIslandTerrain, sampleTerrainSlope } from './terrain'
 import { createTreePlacements } from './IslandScene'
 
 // Coordinates are normalized from the island's centered world bounds:
@@ -19,15 +19,42 @@ describe('island terrain', () => {
     expect(repeat.landMask).toEqual(terrain.landMask)
   })
 
-  it('uses expanded world bounds while preserving normalized island coverage', () => {
-    expect(terrain.width).toBeGreaterThan(180)
-    expect(terrain.depth).toBeGreaterThan(180)
+  it('doubles the island world dimensions while preserving normalized coverage', () => {
+    expect(terrain.width).toBe(440)
+    expect(terrain.depth).toBe(440)
     expect(sample(-0.3, 0).land).toBe(true)
     expect(sample(0.3, 0).land).toBe(true)
     const coverage = terrain.landMask.reduce((count, land) => count + land, 0) / terrain.landMask.length
     expect(coverage).toBeGreaterThan(0.5)
     expect(sample(0.42, 0).height).toBeGreaterThan(1)
     expect(sample(0, 0.4).height).toBeGreaterThan(1)
+  })
+
+  it('reduces the share of near-vertical slopes without lowering mountain peaks', () => {
+    const originalScaleTerrain = { ...terrain, width: 220, depth: 220 }
+    const originalSteepSlopePercent = (() => {
+      let steepCount = 0
+      for (let row = 1; row < originalScaleTerrain.segments; row += 1) {
+        for (let column = 1; column < originalScaleTerrain.segments; column += 1) {
+          if (sampleTerrainSlope(originalScaleTerrain, (column / originalScaleTerrain.segments - 0.5) * 220, (row / originalScaleTerrain.segments - 0.5) * 220) > 70) steepCount += 1
+        }
+      }
+      return steepCount
+    })()
+    const expandedSteepSlopeCount = (() => {
+      let steepCount = 0
+      for (let row = 1; row < terrain.segments; row += 1) {
+        for (let column = 1; column < terrain.segments; column += 1) {
+          const x = (column / terrain.segments - 0.5) * terrain.width
+          const z = (row / terrain.segments - 0.5) * terrain.depth
+          if (sampleTerrainSlope(terrain, x, z) > 70) steepCount += 1
+        }
+      }
+      return steepCount
+    })()
+
+    expect(Math.max(...terrain.heights)).toBeGreaterThanOrEqual(52)
+    expect(expandedSteepSlopeCount).toBeLessThan(originalSteepSlopePercent)
   })
 
   it('keeps most sampled interior locations above sea level', () => {

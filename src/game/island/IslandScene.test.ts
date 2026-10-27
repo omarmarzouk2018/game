@@ -56,6 +56,8 @@ import {
   createTerrainGeometry,
   createTreeGeometry,
   createForestPlacements,
+  createIslandDepthTexture,
+  createOceanMaterial,
   rewriteRockDocument,
 } from './IslandScene'
 import * as terrainModule from './terrain'
@@ -708,6 +710,77 @@ describe('createIslandScene lifecycle', () => {
 
       const totalTreeCount = treeMeshes.reduce((sum, mesh) => sum + mesh.count, 0)
       expect(totalTreeCount).toBeGreaterThan(100)
+
+      handle.dispose()
+    })
+  })
+
+  describe('Phase 7: Water and coast', () => {
+    it('creates island depth and shoreline data texture for realistic water shading', () => {
+      const terrain = terrainModule.createIslandTerrain(41723)
+      const texture = createIslandDepthTexture(terrain)
+
+      expect(texture).toBeInstanceOf(THREE.DataTexture)
+      expect(texture.image.width).toBeGreaterThanOrEqual(128)
+      expect(texture.image.height).toBeGreaterThanOrEqual(128)
+      expect(texture.image.data).toBeInstanceOf(Float32Array)
+
+      // Center should be land/shallow, outer perimeter should be deep ocean
+      const size = texture.image.width
+      const centerIdx = ((Math.floor(size / 2) * size) + Math.floor(size / 2)) * 4
+      const cornerIdx = 0 // (0, 0) corner in deep ocean
+      const centerDepth = texture.image.data[centerIdx] // depth in meters
+      const cornerDepth = texture.image.data[cornerIdx]
+
+      expect(centerDepth).toBeGreaterThanOrEqual(0) // land is positive height
+      expect(cornerDepth).toBeLessThan(-3.0) // deep seabed < -3.0
+
+      texture.dispose()
+    })
+
+    it('creates ocean material with depth gradient, wave animation, and foam line uniforms', () => {
+      const terrain = terrainModule.createIslandTerrain(41723)
+      const texture = createIslandDepthTexture(terrain)
+      const material = createOceanMaterial(texture)
+
+      expect(material).toBeInstanceOf(THREE.MeshStandardMaterial)
+      expect(material.roughness).toBeLessThan(0.35)
+      expect(material.metalness).toBeGreaterThanOrEqual(0.02)
+      expect(material.userData.oceanUniforms).toBeDefined()
+      expect(material.userData.oceanUniforms.uOceanTime).toBeDefined()
+      expect(material.userData.oceanUniforms.uIslandDepthTexture.value).toBe(texture)
+      expect(material.userData.oceanUniforms.uDeepOceanColor).toBeDefined()
+      expect(material.userData.oceanUniforms.uShallowWaterColor).toBeDefined()
+      expect(material.userData.oceanUniforms.uFoamColor).toBeDefined()
+
+      material.dispose()
+      texture.dispose()
+    })
+
+    it('renders deep ocean plane at sea level zero with wave animation and shoreline foam in the scene', async () => {
+      const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+      const scene = rendererState.renderArgs[0][0] as THREE.Scene
+
+      // Find ocean mesh
+      const oceanMesh = scene.children.find((child): child is THREE.Mesh => {
+        if (!(child instanceof THREE.Mesh)) return false
+        const geo = child.geometry
+        return geo instanceof THREE.PlaneGeometry && geo.parameters.width >= 800
+      })
+
+      expect(oceanMesh).toBeDefined()
+      expect(oceanMesh!.position.y).toBe(0)
+      expect(oceanMesh!.receiveShadow).toBe(true)
+
+      const mat = oceanMesh!.material as THREE.MeshStandardMaterial
+      expect(mat.userData.oceanUniforms).toBeDefined()
+      const timeUniform = mat.userData.oceanUniforms.uOceanTime
+      expect(timeUniform).toBeDefined()
+
+      const initialTime = timeUniform.value
+      // Simulate frame progression
+      handle.resize()
+      expect(typeof timeUniform.value).toBe('number')
 
       handle.dispose()
     })

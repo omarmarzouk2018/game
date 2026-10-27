@@ -15,8 +15,8 @@ export type IslandTerrain = {
 
 export const HEIGHT_SCALE = 3.6
 const DEFAULT_SEGMENTS = 256
-const ISLAND_WIDTH = 220
-const ISLAND_DEPTH = 220
+const ISLAND_WIDTH = 440
+const ISLAND_DEPTH = 440
 
 // Normalized island coordinates span [-0.5, 0.5] on each axis; positive z is the rear.
 function seededRandom(seed: number): () => number {
@@ -119,16 +119,16 @@ function heightAt(x: number, z: number, random: number): number {
   const broadRelief = 0.24 * Math.sin(normalizedX * 3.6 + 0.4) * Math.cos(normalizedZ * 3.1 - 0.2)
     + 0.11 * Math.sin(normalizedX * 6.2 - normalizedZ * 2.4)
 
-  // Mountain spine in rear (normalizedZ: 0.15 to 0.75, peaking around 0.44)
-  const spineZ = 0.44 + 0.08 * Math.sin(normalizedX * 3.2 + 0.5)
+  // Mountain spine in rear (normalizedZ: 0.15 to 0.75, peaking around 0.45)
+  const spineZ = 0.46 + 0.07 * Math.sin(normalizedX * 3.2 + 0.5)
   const distToSpine = Math.abs(normalizedZ - spineZ)
-  const spineMask = smoothstep(0.40, 0.07, distToSpine) * smoothstep(0.90, 0.65, Math.abs(normalizedX))
+  const spineMask = smoothstep(0.34, 0.06, distToSpine) * smoothstep(0.90, 0.65, Math.abs(normalizedX))
 
   // Sharp ridged noise for crisp, alpine mountain crests
   const ridge = ridgedNoise2D(normalizedX * 4.8 + 0.3, normalizedZ * 4.8 - 0.2, 41723, 3)
   const ridgeDetail = ridgedNoise2D(normalizedX * 9.6 - 1.1, normalizedZ * 9.6 + 0.8, 88231, 2)
   const sharpRidge = ridge * 0.75 + ridgeDetail * 0.25
-  const mountainSpine = spineMask * (sharpRidge * 15.8)
+  const mountainSpine = spineMask * (sharpRidge * 15.2)
 
   // Foothills: undulating transition from mountain base into plains (height 5-10)
   const foothillBand = smoothstep(0.52, 0.22, distToSpine) * smoothstep(0.85, 0.55, Math.abs(normalizedX)) * (1 - spineMask * 0.65)
@@ -151,7 +151,8 @@ function heightAt(x: number, z: number, random: number): number {
   const isRearCliff = smoothstep(0.15, 0.40, normalizedZ)
   const cliffFactor = Math.max(isEastCliff, isRearCliff)
 
-  const seabedDepth = 1.2 + 4.8 * smoothstep(0.65, 1.0, mapEdge)
+  const seabedSlope = smoothstep(0.91, 1.05, radius)
+  const seabedDepth = 1.2 + 4.8 * Math.max(0, Math.min(1, seabedSlope - harbor * 0.45))
 
   // Steep shoreline cliff ramp for rocky coasts
   const cliffShore = smoothstep(0.0, 0.25, islandCoverage)

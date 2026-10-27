@@ -122,7 +122,7 @@ export function createCameraController(options: CameraControllerOptions): {
         const deltaY = event.clientY - pointerY
         const right = new THREE.Vector3(Math.cos(azimuth), 0, -Math.sin(azimuth))
         const forward = new THREE.Vector3(-Math.sin(azimuth), 0, -Math.cos(azimuth))
-        target.addScaledVector(right, -deltaX * scale).addScaledVector(forward, -deltaY * scale)
+        target.addScaledVector(right, -deltaX * scale).addScaledVector(forward, deltaY * scale)
         target.x = THREE.MathUtils.clamp(target.x, movementBounds.min.x, movementBounds.max.x)
         target.z = THREE.MathUtils.clamp(target.z, movementBounds.min.y, movementBounds.max.y)
       }
