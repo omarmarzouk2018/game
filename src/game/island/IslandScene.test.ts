@@ -261,7 +261,6 @@ describe('createIslandScene lifecycle', () => {
       maxHeight = Math.max(maxHeight, positions.getY(i))
     }
     const snowCapFloor = maxHeight * 0.72
-    const snowFull = maxHeight * 0.95
 
     const sandColor = new THREE.Color(0xd4b886)
     const grassColor = new THREE.Color(0x4a7c34)
@@ -333,7 +332,7 @@ describe('createIslandScene lifecycle', () => {
     expect(canvas).not.toBeNull()
     expect(canvas?.style.width).toBe('100%')
     expect(canvas?.style.height).toBe('100%')
-    expect(rendererState.loadedUrls.some((url) => url.includes('tree_default.glb'))).toBe(true)
+    expect(rendererState.loadedUrls.some((url) => url.includes('mature-scots-pine.glb') || url.includes('tree_default.glb'))).toBe(true)
     expect(rendererState.loadedUrls.some((url) => url.startsWith('blob:'))).toBe(true)
     expect(rendererState.instances[0].setSize).toHaveBeenCalledWith(840, 540, false)
     handle.dispose()
@@ -426,6 +425,7 @@ describe('createIslandScene lifecycle', () => {
   })
 
   it('continues rendering when an optional environment model fails', async () => {
+    rendererState.loadFails.add('mature-scots-pine.glb')
     rendererState.loadFails.add('tree_default.glb')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const handle = await createIslandScene(makeContainer(800, 600), vi.fn())
@@ -686,8 +686,8 @@ describe('createIslandScene lifecycle', () => {
       const size = texture.image.width
       const centerIdx = ((Math.floor(size / 2) * size) + Math.floor(size / 2)) * 4
       const cornerIdx = 0 // (0, 0) corner in deep ocean
-      const centerDepth = texture.image.data[centerIdx] // depth in meters
-      const cornerDepth = texture.image.data[cornerIdx]
+      const centerDepth = texture.image.data![centerIdx] // depth in meters
+      const cornerDepth = texture.image.data![cornerIdx]
 
       expect(centerDepth).toBeGreaterThanOrEqual(0) // land is positive height
       expect(cornerDepth).toBeLessThan(-3.0) // deep seabed < -3.0
@@ -735,6 +735,7 @@ describe('createIslandScene lifecycle', () => {
       expect(timeUniform).toBeDefined()
 
       const initialTime = timeUniform.value
+      expect(typeof initialTime).toBe('number')
       // Simulate frame progression
       handle.resize()
       expect(typeof timeUniform.value).toBe('number')

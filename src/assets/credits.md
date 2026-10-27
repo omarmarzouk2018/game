@@ -11,7 +11,7 @@ These models are bundled locally; runtime loading must use these local files and
 - **License:** CC0 / public domain, as stated on the asset page; [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/).
 - **Attribution:** Not required. Suggested credit: “Mature Scots pine tree by Innerscene (CC0).”
 - **Redistribution conditions:** The asset page permits use, modification, and redistribution for any purpose, including commercial use, without attribution.
-- **Local model and embedded dependencies:** `src/assets/environment/mature-scots-pine.glb` (2,105,404 bytes; GLB v2 includes its binary geometry and two PNG texture images).
+- **Local model and embedded dependencies:** `src/assets/environment/trees/mature-scots-pine.glb` (2,105,404 bytes; GLB v2 includes its binary geometry and two PNG texture images).
 - **Suitability check:** Page describes a textured, real-world-scale, 18 m mature Scots pine. The downloaded preview shows a realistic trunk and needle-bearing branches; the 2.1 MB GLB has 18 mesh primitives and two embedded materials/textures.
 
 ## Rock 09
