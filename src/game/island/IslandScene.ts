@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import pineUrl from '../../assets/environment/mature-scots-pine.glb?url'
+import treeDefaultUrl from '../../assets/environment/trees/tree_default.glb?url'
 import rockDocument from '../../assets/environment/rock-09/rock-09.gltf?raw'
 import rockBufferUrl from '../../assets/environment/rock-09/rock_09.bin?url'
 import rockNormalUrl from '../../assets/environment/rock-09/textures/rock_09_nor_gl_1k.jpg?url'
@@ -18,12 +18,7 @@ import {
   ROCK_MODEL_VARIANTS,
   type RockModelVariant,
 } from './rockModelData'
-import {
-  PINE_MODEL_DATA,
-  DECIDUOUS_MODEL_DATA,
-  PALM_MODEL_DATA,
-  type TreeModelData,
-} from './treeModelData'
+import { DECIDUOUS_MODEL_DATA } from './treeModelData'
 
 export type IslandSceneHandle = {
   resize(): void
@@ -354,18 +349,8 @@ function addRocks(
   }
 }
 
-export function createTreeGeometry(
-  type: 'pine' | 'deciduous' | 'palm',
-  scale = 1.0,
-): THREE.BufferGeometry {
-  let modelData: TreeModelData
-  if (type === 'pine') {
-    modelData = PINE_MODEL_DATA
-  } else if (type === 'deciduous') {
-    modelData = DECIDUOUS_MODEL_DATA
-  } else {
-    modelData = PALM_MODEL_DATA
-  }
+export function createTreeGeometry(scale = 1.0): THREE.BufferGeometry {
+  const modelData = DECIDUOUS_MODEL_DATA
 
   const geometry = new THREE.BufferGeometry()
   const positions = new Float32Array(modelData.positions.length)
@@ -387,17 +372,15 @@ export function createTreeGeometry(
 }
 
 export type ForestPlacements = {
-  palms: Array<[number, number]>
-  deciduous: Array<[number, number]>
-  pines: Array<[number, number]>
+  shoreline: Array<[number, number]>
+  woodland: Array<[number, number]>
 }
 
 export function createForestPlacements(terrain: IslandTerrain): ForestPlacements {
-  const palms: Array<[number, number]> = []
-  const deciduous: Array<[number, number]> = []
-  const pines: Array<[number, number]> = []
+  const shoreline: Array<[number, number]> = []
+  const woodland: Array<[number, number]> = []
 
-  const step = 2.4
+  const step = 1.7
   const halfW = terrain.width / 2 - 5
   const halfD = terrain.depth / 2 - 5
 
@@ -417,52 +400,26 @@ export function createForestPlacements(terrain: IslandTerrain): ForestPlacements
 
       const slope = sampleTerrainSlope(terrain, x, z)
 
-      // Palms: shoreline beach 0.3 <= height <= 1.8, gentle slope < 18°
+      // Keep the original sparse shoreline spacing and density.
       if (sample.height <= 1.8 && slope < 18.0) {
-        const palmHash = hash2D(ix, iz, 31103)
-        if (palmHash > -0.25) {
-          palms.push([x, z])
-        }
+        const shorelineHash = hash2D(ix, iz, 31103)
+        if (shorelineHash > 0.68) shoreline.push([x, z])
         continue
       }
 
-      // Pines: mountain slopes and foothills 5.0 <= height <= 16.5, slope <= 30°
-      if (sample.height >= 5.0 && slope <= 30.0) {
-        if (sample.height > 8.0) {
-          const pineHash = hash2D(ix, iz, 99173)
-          if (pineHash > -0.45) {
-            pines.push([x, z])
-          }
-          continue
-        }
+      const inTownClearing = Math.abs(x) < 13 && z > -10 && z < 20
+      if (inTownClearing) continue
 
-        // Between 5.0 and 8.0: transition zone between deciduous and pine
-        const biomeNoise = valueNoise2D(x * 0.08, z * 0.08, 48211)
-        if (biomeNoise > 0.0) {
-          const pineHash = hash2D(ix, iz, 99173)
-          if (pineHash > -0.35) {
-            pines.push([x, z])
-          }
-          continue
-        }
-      }
-
-      // Deciduous: temperate plains & interior 1.8 <= height <= 8.0
-      if (sample.height >= 1.8 && sample.height <= 8.0 && slope < 22.0) {
-        // Leave town / harbor clearing in central plain (buildable heart of island)
-        const inTownClearing = Math.abs(x) < 13 && z > -10 && z < 20
-        if (!inTownClearing) {
-          const forestClusterNoise = valueNoise2D(x * 0.045, z * 0.045, 12873)
-          const densityHash = hash2D(ix, iz, 55219)
-          if (forestClusterNoise > -0.25 && densityHash > -0.4) {
-            deciduous.push([x, z])
-          }
-        }
+      // Woodland placements share one tree model across plains and foothills.
+      if (sample.height >= 1.8 && slope < 30.0) {
+        const forestClusterNoise = valueNoise2D(x * 0.045, z * 0.045, 12873)
+        const densityHash = hash2D(ix, iz, 55219)
+        if (forestClusterNoise > -0.25 && densityHash > -0.72) woodland.push([x, z])
       }
     }
   }
 
-  return { palms, deciduous, pines }
+  return { shoreline, woodland }
 }
 
 function addTrees(
@@ -471,41 +428,8 @@ function addTrees(
   resources: Set<THREE.Material | THREE.BufferGeometry>,
 ) {
   const forest = createForestPlacements(terrain)
-
-  const treeConfigs: Array<{
-    type: 'pine' | 'deciduous' | 'palm'
-    placements: Array<[number, number]>
-    baseScale: number
-    scaleRange: number
-    roughness: number
-    metalness: number
-    colorTint?: number
-  }> = [
-    {
-      type: 'pine',
-      placements: forest.pines,
-      baseScale: 2.3,
-      scaleRange: 0.6,
-      roughness: 0.85,
-      metalness: 0.05,
-    },
-    {
-      type: 'deciduous',
-      placements: forest.deciduous,
-      baseScale: 2.2,
-      scaleRange: 0.7,
-      roughness: 0.82,
-      metalness: 0.05,
-    },
-    {
-      type: 'palm',
-      placements: forest.palms,
-      baseScale: 2.4,
-      scaleRange: 0.6,
-      roughness: 0.8,
-      metalness: 0.05,
-    },
-  ]
+  const placements = [...forest.woodland, ...forest.shoreline]
+  if (placements.length === 0) return
 
   const matrix = new THREE.Matrix4()
   const position = new THREE.Vector3()
@@ -513,58 +437,36 @@ function addTrees(
   const scaleVec = new THREE.Vector3()
   const euler = new THREE.Euler()
 
-  for (const config of treeConfigs) {
-    if (config.placements.length === 0) continue
+  const geometry = createTreeGeometry()
+  resources.add(geometry)
+  const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.05 })
+  resources.add(material)
+  const instancedMesh = new THREE.InstancedMesh(geometry, material, placements.length)
 
-    const geometry = createTreeGeometry(config.type)
-    resources.add(geometry)
-
-    const material = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: config.roughness,
-      metalness: config.metalness,
-    })
-    resources.add(material)
-
-    const instancedMesh = new THREE.InstancedMesh(geometry, material, config.placements.length)
-
-    for (let i = 0; i < config.placements.length; i += 1) {
-      const [x, z] = config.placements[i]
-      const sample = terrainAt(terrain, x, z)
-      const ix = Math.round(x * 10)
-      const iz = Math.round(z * 10)
-
-      const s = config.baseScale + (hash2D(ix, iz, 3389) * 0.5 + 0.5) * config.scaleRange
-      position.set(x, sample.height - 0.05, z)
-
-      const yaw = (hash2D(ix, iz, 8819) + 1) * Math.PI
-      let pitch = 0
-      let roll = 0
-
-      if (config.type === 'palm') {
-        // Subtle natural seaward lean for coastal palms
-        const leanAngle = 0.12 + (hash2D(ix, iz, 9923) * 0.5 + 0.5) * 0.08
-        pitch = Math.cos(yaw) * leanAngle
-        roll = Math.sin(yaw) * leanAngle
-      } else {
-        // Slight slope alignment
-        pitch = hash2D(ix, iz, 1029) * 0.06
-        roll = hash2D(ix, iz, 5521) * 0.06
-      }
-
-      euler.set(pitch, yaw, roll, 'YXZ')
-      rotation.setFromEuler(euler)
-
-      scaleVec.set(s, s * (0.92 + (hash2D(ix, iz, 4423) * 0.5 + 0.5) * 0.18), s)
-      matrix.compose(position, rotation, scaleVec)
-      instancedMesh.setMatrixAt(i, matrix)
-    }
-
-    instancedMesh.instanceMatrix.needsUpdate = true
-    instancedMesh.castShadow = true
-    instancedMesh.receiveShadow = true
-    scene.add(instancedMesh)
+  for (let i = 0; i < placements.length; i += 1) {
+    const [x, z] = placements[i]
+    const sample = terrainAt(terrain, x, z)
+    const ix = Math.round(x * 10)
+    const iz = Math.round(z * 10)
+    const isShoreline = sample.height <= 1.8
+    const baseScale = isShoreline ? 2.4 : 2.2
+    const scaleRange = isShoreline ? 0.6 : 0.7
+    const s = baseScale + (hash2D(ix, iz, 3389) * 0.5 + 0.5) * scaleRange
+    position.set(x, sample.height - 0.05, z)
+    const yaw = (hash2D(ix, iz, 8819) + 1) * Math.PI
+    const pitch = hash2D(ix, iz, 1029) * 0.06
+    const roll = hash2D(ix, iz, 5521) * 0.06
+    euler.set(pitch, yaw, roll, 'YXZ')
+    rotation.setFromEuler(euler)
+    scaleVec.set(s, s * (0.92 + (hash2D(ix, iz, 4423) * 0.5 + 0.5) * 0.18), s)
+    matrix.compose(position, rotation, scaleVec)
+    instancedMesh.setMatrixAt(i, matrix)
   }
+
+  instancedMesh.instanceMatrix.needsUpdate = true
+  instancedMesh.castShadow = true
+  instancedMesh.receiveShadow = true
+  scene.add(instancedMesh)
 }
 
 export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeometry {
@@ -1077,7 +979,7 @@ export async function createIslandScene(
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 0.96
     renderer.shadowMap.enabled = true
-    renderer.shadowMap.type = THREE.PCFShadowMap
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.shadowMap.autoUpdate = false
     renderer.shadowMap.needsUpdate = true
     container.appendChild(renderer.domElement)
@@ -1085,13 +987,14 @@ export async function createIslandScene(
     const hemisphere = new THREE.HemisphereLight(0xdbe9e5, 0x665b45, 1.25)
     scene.add(hemisphere)
     const sunlight = new THREE.DirectionalLight(0xffe0b2, 2.15)
-    sunlight.position.set(-55, 85, -35)
+    sunlight.position.set(-165, 170, -105)
     sunlight.castShadow = true
     sunlight.shadow.mapSize.set(2048, 2048)
-    sunlight.shadow.camera.left = -75
-    sunlight.shadow.camera.right = 75
-    sunlight.shadow.camera.top = 75
-    sunlight.shadow.camera.bottom = -75
+    sunlight.shadow.camera.left = -250
+    sunlight.shadow.camera.right = 250
+    sunlight.shadow.camera.top = 250
+    sunlight.shadow.camera.bottom = -250
+    sunlight.shadow.camera.far = 600
     sunlight.shadow.bias = -0.0002
     scene.add(sunlight)
     const fill = new THREE.AmbientLight(0xc1d8d9, 0.22)
@@ -1116,7 +1019,7 @@ export async function createIslandScene(
     const loader = new GLTFLoader()
     const rockUrl = localRockDocumentUrl()
     const models = [
-      { url: pineUrl, label: 'Scots pine', kind: 'tree' as const },
+      { url: treeDefaultUrl, label: 'default tree', kind: 'tree' as const },
       { url: rockUrl, label: 'rock', kind: 'rock' as const },
     ]
     let rockUrlRevoked = false

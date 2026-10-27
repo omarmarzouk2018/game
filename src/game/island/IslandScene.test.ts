@@ -333,7 +333,7 @@ describe('createIslandScene lifecycle', () => {
     expect(canvas).not.toBeNull()
     expect(canvas?.style.width).toBe('100%')
     expect(canvas?.style.height).toBe('100%')
-    expect(rendererState.loadedUrls.some((url) => url.includes('mature-scots-pine.glb'))).toBe(true)
+    expect(rendererState.loadedUrls.some((url) => url.includes('tree_default.glb'))).toBe(true)
     expect(rendererState.loadedUrls.some((url) => url.startsWith('blob:'))).toBe(true)
     expect(rendererState.instances[0].setSize).toHaveBeenCalledWith(840, 540, false)
     handle.dispose()
@@ -426,7 +426,7 @@ describe('createIslandScene lifecycle', () => {
   })
 
   it('continues rendering when an optional environment model fails', async () => {
-    rendererState.loadFails.add('mature-scots-pine.glb')
+    rendererState.loadFails.add('tree_default.glb')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const handle = await createIslandScene(makeContainer(800, 600), vi.fn())
     expect(warn).toHaveBeenCalled()
@@ -603,88 +603,49 @@ describe('createIslandScene lifecycle', () => {
   })
 
   describe('Phase 6: Trees and vegetation', () => {
-    it('generates ready 3D tree geometries with distinct vertex colors for bark and foliage', () => {
-      const pine = createTreeGeometry('pine')
-      const deciduous = createTreeGeometry('deciduous')
-      const palm = createTreeGeometry('palm')
+    it('builds the single default tree geometry with bark and foliage colors', () => {
+      const tree = createTreeGeometry()
+      expect(tree).toBeInstanceOf(THREE.BufferGeometry)
+      expect(tree.getAttribute('position').count).toBe(192)
+      expect(tree.getIndex()!.count).toBe(342)
 
-      expect(pine).toBeInstanceOf(THREE.BufferGeometry)
-      expect(deciduous).toBeInstanceOf(THREE.BufferGeometry)
-      expect(palm).toBeInstanceOf(THREE.BufferGeometry)
-
-      // Vertex counts from Kenney Nature Kit CC0 models
-      expect(pine.getAttribute('position').count).toBe(392)
-      expect(pine.getIndex()!.count).toBe(690)
-
-      expect(deciduous.getAttribute('position').count).toBe(192)
-      expect(deciduous.getIndex()!.count).toBe(342)
-
-      expect(palm.getAttribute('position').count).toBe(296)
-      expect(palm.getIndex()!.count).toBe(558)
-
-      // Vertex colors: bark vs foliage
-      const pineColors = pine.getAttribute('color')
-      expect(pineColors).toBeDefined()
+      const colors = tree.getAttribute('color')
       let foundBark = false
       let foundFoliage = false
-      for (let i = 0; i < pineColors.count; i += 1) {
-        const r = pineColors.getX(i)
-        const g = pineColors.getY(i)
+      for (let i = 0; i < colors.count; i += 1) {
+        const r = colors.getX(i)
+        const g = colors.getY(i)
         if (g > r) foundFoliage = true
         if (r > g) foundBark = true
       }
       expect(foundFoliage).toBe(true)
       expect(foundBark).toBe(true)
-
-      pine.dispose()
-      deciduous.dispose()
-      palm.dispose()
+      tree.dispose()
     })
 
-    it('generates deterministic tree placements by biome (palms on shore, deciduous on plains, pines on mountains)', () => {
+    it('densifies woodland clusters while keeping shoreline trees sparse', () => {
       const terrain = terrainModule.createIslandTerrain(41723)
       const forest1 = createForestPlacements(terrain)
       const forest2 = createForestPlacements(terrain)
 
       expect(forest1).toEqual(forest2)
-      expect(forest1.palms.length).toBeGreaterThan(15)
-      expect(forest1.deciduous.length).toBeGreaterThan(30)
-      expect(forest1.pines.length).toBeGreaterThan(30)
-
-      // Palms: shoreline sand (0.3 <= height <= 1.8), gentle slope (< 18°)
-      for (const [x, z] of forest1.palms) {
+      expect(forest1.woodland.length).toBeGreaterThan(500)
+      expect(forest1.shoreline.length).toBeGreaterThan(15)
+      expect(forest1.shoreline.length).toBeLessThan(250)
+      expect(forest1.woodland.every(([x, z]) => Math.abs(x) >= 13 || z <= -10 || z >= 20)).toBe(true)
+      expect(forest1.woodland.every(([x, z]) => {
         const sample = terrainModule.sampleIslandTerrain(terrain, x, z)
-        expect(sample.land).toBe(true)
-        expect(sample.height).toBeGreaterThanOrEqual(0.3)
-        expect(sample.height).toBeLessThanOrEqual(1.8)
-        const slope = terrainModule.sampleTerrainSlope(terrain, x, z)
-        expect(slope).toBeLessThan(18.0)
-      }
-
-      // Deciduous: temperate plains and interior forest (1.8 <= height <= 8.0)
-      for (const [x, z] of forest1.deciduous) {
+        return sample.land && sample.height > 1.8 && sample.height <= 16.5
+          && terrainModule.sampleTerrainSlope(terrain, x, z) <= 30
+      })).toBe(true)
+      expect(forest1.shoreline.every(([x, z]) => {
         const sample = terrainModule.sampleIslandTerrain(terrain, x, z)
-        expect(sample.land).toBe(true)
-        expect(sample.height).toBeGreaterThanOrEqual(1.8)
-        expect(sample.height).toBeLessThanOrEqual(8.0)
-      }
-
-      // Pines: foothills and mountain slopes (5.0 <= height <= 16.5, slope <= 30°)
-      for (const [x, z] of forest1.pines) {
-        const sample = terrainModule.sampleIslandTerrain(terrain, x, z)
-        expect(sample.land).toBe(true)
-        expect(sample.height).toBeGreaterThanOrEqual(5.0)
-        expect(sample.height).toBeLessThanOrEqual(16.5)
-        const slope = terrainModule.sampleTerrainSlope(terrain, x, z)
-        expect(slope).toBeLessThanOrEqual(30.0)
-      }
-
-      // No trees on bare snowy mountain summits (> 17.0)
-      const allPlacements = [...forest1.palms, ...forest1.deciduous, ...forest1.pines]
-      expect(allPlacements.every(([x, z]) => terrainModule.sampleIslandTerrain(terrain, x, z).height <= 17.0)).toBe(true)
+        return sample.land && sample.height >= 0.3 && sample.height <= 1.8
+          && terrainModule.sampleTerrainSlope(terrain, x, z) < 18
+      })).toBe(true)
     })
 
-    it('populates InstancedMesh tree variants in the scene with shadow casting and receiving', async () => {
+    it('populates one default-tree InstancedMesh for woodland and shoreline placements', async () => {
       const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
       const scene = rendererState.renderArgs[0][0] as THREE.Scene
 
@@ -693,13 +654,9 @@ describe('createIslandScene lifecycle', () => {
         child instanceof THREE.InstancedMesh && child.count > 0,
       )
 
-      // Tree meshes have vertex counts 392 (pine), 192 (deciduous), 296 (palm)
-      const treeMeshes = instancedMeshes.filter((mesh) => {
-        const vertexCount = mesh.geometry.getAttribute('position')?.count
-        return vertexCount === 392 || vertexCount === 192 || vertexCount === 296
-      })
+      const treeMeshes = instancedMeshes.filter((mesh) => mesh.geometry.getAttribute('position')?.count === 192)
 
-      expect(treeMeshes.length).toBe(3)
+      expect(treeMeshes.length).toBe(1)
       for (const mesh of treeMeshes) {
         expect(mesh.castShadow).toBe(true)
         expect(mesh.receiveShadow).toBe(true)
@@ -781,6 +738,70 @@ describe('createIslandScene lifecycle', () => {
       // Simulate frame progression
       handle.resize()
       expect(typeof timeUniform.value).toBe('number')
+
+      handle.dispose()
+    })
+  })
+
+  describe('Phase 8: Lighting, atmosphere, performance', () => {
+    it('configures directional sunlight with expanded shadow frustum covering the 440x440 island and PCFSoftShadowMap', async () => {
+      const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+      const scene = rendererState.renderArgs[0][0] as THREE.Scene
+      const renderer = rendererState.instances[0]
+
+      const sunlight = scene.children.find((child): child is THREE.DirectionalLight => child instanceof THREE.DirectionalLight)
+      expect(sunlight).toBeDefined()
+      expect(sunlight!.castShadow).toBe(true)
+      expect(sunlight!.position.y).toBeGreaterThanOrEqual(150)
+      expect(Math.hypot(sunlight!.position.x, sunlight!.position.z)).toBeGreaterThanOrEqual(150)
+
+      // Shadow map configuration
+      expect(renderer.shadowMap.enabled).toBe(true)
+      expect(renderer.shadowMap.type).toBe(THREE.PCFSoftShadowMap)
+      expect(sunlight!.shadow.mapSize.x).toBeGreaterThanOrEqual(2048)
+      expect(sunlight!.shadow.mapSize.y).toBeGreaterThanOrEqual(2048)
+
+      // Shadow frustum must cover the expanded 440x440 island bounds
+      const shadowCam = sunlight!.shadow.camera
+      expect(shadowCam.left).toBeLessThanOrEqual(-220)
+      expect(shadowCam.right).toBeGreaterThanOrEqual(220)
+      expect(shadowCam.top).toBeGreaterThanOrEqual(220)
+      expect(shadowCam.bottom).toBeLessThanOrEqual(-220)
+      expect(shadowCam.far).toBeGreaterThanOrEqual(500)
+
+      handle.dispose()
+    })
+
+    it('configures hemisphere light with atmospheric sky and warm terrain bounce colors', async () => {
+      const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+      const scene = rendererState.renderArgs[0][0] as THREE.Scene
+
+      const hemi = scene.children.find((child): child is THREE.HemisphereLight => child instanceof THREE.HemisphereLight)
+      expect(hemi).toBeDefined()
+      expect(hemi!.intensity).toBeGreaterThanOrEqual(1.0)
+      expect(hemi!.intensity).toBeLessThanOrEqual(1.6)
+
+      // Sky should be cool/blue-tinted, ground should be warm/earthy
+      const sky = hemi!.color
+      const ground = hemi!.groundColor
+      expect(sky.b).toBeGreaterThan(sky.r) // blue bias for sky
+      expect(ground.r).toBeGreaterThan(ground.b) // warm earth bias for ground
+
+      handle.dispose()
+    })
+
+    it('configures scene atmosphere and fog that blends into the background color', async () => {
+      const handle = await createIslandScene(makeContainer(840, 540), vi.fn())
+      const scene = rendererState.renderArgs[0][0] as THREE.Scene
+
+      expect(scene.background).toBeInstanceOf(THREE.Color)
+      expect(scene.fog).toBeInstanceOf(THREE.Fog)
+
+      const bgColor = scene.background as THREE.Color
+      const fog = scene.fog as THREE.Fog
+      expect(fog.color.getHex()).toBe(bgColor.getHex())
+      expect(fog.near).toBeGreaterThanOrEqual(200)
+      expect(fog.far).toBeGreaterThanOrEqual(1000)
 
       handle.dispose()
     })
