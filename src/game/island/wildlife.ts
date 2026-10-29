@@ -208,12 +208,14 @@ export function addAnimals(
     animals.push(animal)
   })
 
-  return (time: number) => {
+  const animate = (time: number) => {
     animals.forEach((animal, i) => {
       const bob = Math.sin(time * 3.0 + i * 1.7) * 0.04
       animal.position.y += bob * 0.005
     })
   }
+
+  return Object.assign(animate, { animals })
 }
 
 /**
@@ -255,7 +257,7 @@ export function addBirds(
     birds.push(bird)
   }
 
-  return (time: number) => {
+  const animate = (time: number) => {
     birds.forEach((bird, i) => {
       const angle = time * 0.35 + i * ((Math.PI * 2) / birdCount)
       const radius = 70 + Math.sin(time * 0.2 + i) * 15
@@ -268,4 +270,6 @@ export function addBirds(
       bird.rotation.z = Math.sin(time * 8.0 + i * 1.5) * 0.12
     })
   }
+
+  return Object.assign(animate, { birds })
 }

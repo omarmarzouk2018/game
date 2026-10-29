@@ -100,20 +100,19 @@ describe('createIslandScene lifecycle', () => {
     const handle = await handlePromise
     expect(handle).toHaveProperty('dispose')
     expect(container.querySelector('canvas')).not.toBeNull()
-    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(2))
+    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(1))
     handle.dispose()
     const { Group } = await import('three')
     for (const resolve of rendererState.pendingLoads.values()) resolve({ scene: new Group() })
   })
 
-  it('does not render after disposal and releases late model resources and blob URLs', async () => {
+  it('does not render after disposal and releases late model resources', async () => {
     rendererState.deferLoads = true
     const container = makeContainer(840, 540)
-    const revokeObjectURL = vi.spyOn(URL, 'revokeObjectURL')
     const handlePromise = createIslandScene(container, vi.fn())
     expect(handlePromise).toBeInstanceOf(Promise)
     const handle = await handlePromise
-    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(2))
+    await vi.waitFor(() => expect(rendererState.pendingLoads.size).toBe(1))
     const renderer = rendererState.instances[0]
     const renderCount = renderer.render.mock.calls.length
     const { Group, Mesh, BoxGeometry, MeshBasicMaterial } = await import('three')
@@ -121,12 +120,11 @@ describe('createIslandScene lifecycle', () => {
     const material = new MeshBasicMaterial()
     const disposeGeometry = vi.spyOn(geometry, 'dispose')
     const disposeMaterial = vi.spyOn(material, 'dispose')
-    const blobUrl = rendererState.loadedUrls.find((url) => url.startsWith('blob:'))!
 
     handle.dispose()
-    for (const [url, resolve] of rendererState.pendingLoads) {
+    for (const resolve of rendererState.pendingLoads.values()) {
       const loadedModel = new Group()
-      if (url === blobUrl) loadedModel.add(new Mesh(geometry, material))
+      loadedModel.add(new Mesh(geometry, material))
       resolve({ scene: loadedModel })
     }
     await vi.waitFor(() => expect(disposeGeometry).toHaveBeenCalled())
@@ -135,7 +133,6 @@ describe('createIslandScene lifecycle', () => {
     expect(renderer.render).toHaveBeenCalledTimes(renderCount)
     expect(disposeGeometry).toHaveBeenCalledOnce()
     expect(disposeMaterial).toHaveBeenCalledOnce()
-    expect(revokeObjectURL).toHaveBeenCalledWith(blobUrl)
     expect(container.querySelector('canvas')).toBeNull()
   })
 
@@ -334,7 +331,6 @@ describe('createIslandScene lifecycle', () => {
     expect(canvas?.style.width).toBe('100%')
     expect(canvas?.style.height).toBe('100%')
     expect(rendererState.loadedUrls.some((url) => url.includes('mature-scots-pine.glb') || url.includes('tree_default.glb'))).toBe(true)
-    expect(rendererState.loadedUrls.some((url) => url.startsWith('blob:'))).toBe(true)
     expect(rendererState.instances[0].setSize).toHaveBeenCalledWith(840, 540, false)
     handle.dispose()
   })

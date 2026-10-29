@@ -17,6 +17,32 @@ import {
  * Scales vertices outward slightly around each quad center to maintain natural crown volume
  * and silhouette matching the original tree model at varying levels of detail.
  */
+/**
+ * Creates a lightweight brown speck/dot geometry (4 triangles) for distant overview mode.
+ * Replaces heavy 3D rock meshes with simple brown terrain dots when looking from high altitude
+ * as requested ("تبان نقطة بنية بس مش لازم صخور").
+ */
+function createBrownDotGeometry(radius = 0.55, height = 0.1): THREE.BufferGeometry {
+  const geom = new THREE.BufferGeometry()
+  const positions = new Float32Array([
+    0, height, 0, // 0: apex
+    0, 0.01, -radius, // 1: north
+    radius, 0.01, 0, // 2: east
+    0, 0.01, radius, // 3: south
+    -radius, 0.01, 0, // 4: west
+  ])
+  const indices = new Uint16Array([
+    0, 1, 2, // North-East
+    0, 2, 3, // East-South
+    0, 3, 4, // South-West
+    0, 4, 1, // West-North
+  ])
+  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geom.setIndex(new THREE.BufferAttribute(indices, 1))
+  geom.computeVertexNormals()
+  return geom
+}
+
 function decimateFoliageQuads(
   sourceGeometry: THREE.BufferGeometry,
   step: number,
@@ -97,7 +123,8 @@ export function addInstances(
     geometries: THREE.BufferGeometry[]
     isFoliage: boolean
   }
-  const trunkGroupsByMaterial = new Map<THREE.Material, MaterialGroup>()
+  const closeTrunkGroups = new Map<THREE.Material, MaterialGroup>()
+  const farTrunkGroups = new Map<THREE.Material, MaterialGroup>()
   const closeFoliageGroups = new Map<THREE.Material, MaterialGroup>()
   const farFoliageGroups = new Map<THREE.Material, MaterialGroup>()
 
@@ -122,17 +149,6 @@ export function addInstances(
       continue
     }
 
-    // Optimization: Keep primary and secondary structural spreading crown limbs
-    // preserving rich crown volume and supporting dense foliage clusters
-    if (kind === 'tree' && meshName.includes('crown_limb')) {
-      const match = meshName.match(/\d+$/)
-      const limbIndex = match ? parseInt(match[0], 10) : 0
-      if (limbIndex % 2 !== 0) {
-        transformedGeometry.dispose()
-        continue
-      }
-    }
-
     const isFoliage =
       kind === 'tree' &&
       (meshName.includes('needle') ||
@@ -154,8 +170,8 @@ export function addInstances(
       }
       closeGroup.geometries.push(closeGeom)
 
-      // Overview/Far foliage: same Scots pine needle cards decimated (~670 cards, lightweight, matching crown silhouette)
-      const farGeom = decimateFoliageQuads(transformedGeometry, 72, 1.6)
+      // Overview/Far foliage: same Scots pine needle cards decimated (~240 cards, lightweight, matching crown silhouette)
+      const farGeom = decimateFoliageQuads(transformedGeometry, 100, 1.6)
       let farGroup = farFoliageGroups.get(material)
       if (!farGroup) {
         farGroup = { material, geometries: [], isFoliage: true }
@@ -165,24 +181,55 @@ export function addInstances(
 
       transformedGeometry.dispose()
     } else {
-      let trunkGroup = trunkGroupsByMaterial.get(material)
-      if (!trunkGroup) {
-        trunkGroup = { material, geometries: [], isFoliage: false }
-        trunkGroupsByMaterial.set(material, trunkGroup)
+      if (kind === 'rock') {
+        // High-poly close-up Rock 09 geometry
+        let closeGroup = closeTrunkGroups.get(material)
+        if (!closeGroup) {
+          closeGroup = { material, geometries: [], isFoliage: false }
+          closeTrunkGroups.set(material, closeGroup)
+        }
+        closeGroup.geometries.push(transformedGeometry)
+      } else {
+        // Tree trunk and crown limbs (Scots Pine model)
+        let closeGroup = closeTrunkGroups.get(material)
+        if (!closeGroup) {
+          closeGroup = { material, geometries: [], isFoliage: false }
+          closeTrunkGroups.set(material, closeGroup)
+        }
+        let farGroup = farTrunkGroups.get(material)
+        if (!farGroup) {
+          farGroup = { material, geometries: [], isFoliage: false }
+          farTrunkGroups.set(material, farGroup)
+        }
+
+        if (meshName.includes('crown_limb')) {
+          const match = meshName.match(/\d+$/)
+          const limbIndex = match ? parseInt(match[0], 10) : 0
+          if (limbIndex % 2 === 0) {
+            closeGroup.geometries.push(transformedGeometry.clone())
+          }
+          if (limbIndex === 0 || limbIndex === 2) {
+            farGroup.geometries.push(transformedGeometry.clone())
+          }
+          transformedGeometry.dispose()
+        } else {
+          // Main trunk
+          closeGroup.geometries.push(transformedGeometry.clone())
+          farGroup.geometries.push(transformedGeometry)
+        }
       }
-      trunkGroup.geometries.push(transformedGeometry)
     }
   }
 
   // Compute instance transformation matrices for hardware-accelerated instanced rendering
-  const matrices: THREE.Matrix4[] = []
+  const closeMatrices: THREE.Matrix4[] = []
+  const farMatrices: THREE.Matrix4[] = []
 
   const matrix = new THREE.Matrix4()
   const position = new THREE.Vector3()
   const rotation = new THREE.Quaternion()
   const scaleVec = new THREE.Vector3()
   const euler = new THREE.Euler()
-  const upAxis = new THREE.Vector3(0, 1, 0)
 
   for (const [x, z] of placements) {
     const sample = sampleIslandTerrain(terrain, x, z)
@@ -192,7 +239,7 @@ export function addInstances(
 
     if (
       !sample.land ||
-      (kind === 'rock' && (sample.height < 1.45 || sample.height > 48.0 || isFrontBeachZone || isTerrainSand(terrain, x, z))) ||
+      (kind === 'rock' && (sample.height < 0.95 || sample.height > 52.0 || isFrontBeachZone || isTerrainSand(terrain, x, z))) ||
       (kind === 'tree' && (isTerrainSand(terrain, x, z) || isTerrainRock(terrain, x, z)))
     ) {
       continue
@@ -204,20 +251,46 @@ export function addInstances(
     if (kind === 'rock') {
       const slope = sampleTerrainSlope(terrain, x, z)
       const normal = sampleTerrainNormal(terrain, x, z)
-      const scaleMultiplier = slope >= 20.0 ? 1.35 : 1.0
-      const scale = (0.65 + ((Math.abs(x * 13 + z * 7) % 21) / 100)) * scaleMultiplier
+      const isShore = sample.height <= 1.45
+
+      // Balanced human/cart scale proportioned to roads (2m) and houses (3.5m)
+      // Shore boulders: ~0.5m - 0.7m height; Mountain crags: ~0.8m - 1.1m height
+      const closeMultiplier = isShore ? 18.0 : 25.0 + Math.min(7.0, (slope - 20.0) * 0.35)
+      const scaleVariation = 0.85 + (hash2D(ix, iz, 1493) * 0.5 + 0.5) * 0.3
+      const sClose = closeMultiplier * scaleVariation
+
+      // When camera is higher up in overview, rocks appear smaller (~55% scale)
+      // so the terrain and island silhouette stay clean and uncluttered from high altitude
+      const sFar = sClose * 0.55
 
       if (slope >= 20.0) {
         const slopeAngle = (slope * Math.PI) / 180
-        const yaw = Math.atan2(normal.nx, normal.nz) + hash2D(ix, iz, 8819) * 0.3
+        const yaw = Math.atan2(normal.nx, normal.nz) + hash2D(ix, iz, 8819) * 0.35
         const pitch = slopeAngle * 0.55
-        euler.set(pitch, yaw, 0, 'YXZ')
+        const roll = hash2D(ix, iz, 7719) * 0.15
+        euler.set(pitch, yaw, roll, 'YXZ')
         rotation.setFromEuler(euler)
       } else {
-        rotation.setFromAxisAngle(upAxis, (x - z) * 0.07)
+        const yaw = (hash2D(ix, iz, 8819) + 1) * Math.PI
+        const tilt = hash2D(ix, iz, 5521) * 0.12
+        euler.set(tilt, yaw, 0, 'YXZ')
+        rotation.setFromEuler(euler)
       }
-      scaleVec.set(scale * 15, scale * 15, scale * 15)
-      position.set(x, sample.height - (slope >= 20.0 ? 0.35 : 0), z)
+
+      // Close matrix
+      scaleVec.set(sClose, sClose, sClose)
+      const embedDepthClose = sClose * 0.003
+      position.set(x, sample.height - embedDepthClose, z)
+      matrix.compose(position, rotation, scaleVec)
+      closeMatrices.push(matrix.clone())
+
+      // Far matrix (smaller size when camera is higher up)
+      scaleVec.set(sFar, sFar, sFar)
+      const embedDepthFar = sFar * 0.003
+      position.set(x, sample.height - embedDepthFar, z)
+      matrix.compose(position, rotation, scaleVec)
+      farMatrices.push(matrix.clone())
+      continue
     } else {
       // Scots pine trees: naturally proportioned for 440m island terrain
       const isShoreline = sample.height <= 1.8
@@ -237,10 +310,11 @@ export function addInstances(
     }
 
     matrix.compose(position, rotation, scaleVec)
-    matrices.push(matrix.clone())
+    closeMatrices.push(matrix.clone())
+    farMatrices.push(matrix.clone())
   }
 
-  if (matrices.length === 0) return []
+  if (closeMatrices.length === 0) return []
 
   const createdMeshes: THREE.InstancedMesh[] = []
 
@@ -248,6 +322,7 @@ export function addInstances(
     groups: Map<THREE.Material, MaterialGroup>,
     name: string,
     castShadow: boolean,
+    meshMatrices: THREE.Matrix4[] = closeMatrices,
   ) => {
     for (const group of groups.values()) {
       if (group.geometries.length === 0) continue
@@ -266,10 +341,10 @@ export function addInstances(
 
       resources.add(finalGeometry)
 
-      const instancedMesh = new THREE.InstancedMesh(finalGeometry, group.material, matrices.length)
+      const instancedMesh = new THREE.InstancedMesh(finalGeometry, group.material, meshMatrices.length)
       instancedMesh.name = name
-      for (let i = 0; i < matrices.length; i++) {
-        instancedMesh.setMatrixAt(i, matrices[i])
+      for (let i = 0; i < meshMatrices.length; i++) {
+        instancedMesh.setMatrixAt(i, meshMatrices[i])
       }
 
       instancedMesh.instanceMatrix.needsUpdate = true
@@ -283,16 +358,41 @@ export function addInstances(
   }
 
   if (kind === 'rock') {
-    // PBR Rock 09: solid boulders on cliffs and shore
-    buildMeshGroup(trunkGroupsByMaterial, 'PbrRock', true)
-  } else {
-    // 1. Scots Pine Trunk and Limbs (Always visible across all distances, never changed)
-    buildMeshGroup(trunkGroupsByMaterial, 'PbrTree_Trunk', true)
+    // 1. PBR Rock Close-up: full 12,416-triangle photorealistic boulders when camera is near ground
+    buildMeshGroup(closeTrunkGroups, 'PbrRock_Close', true, closeMatrices)
 
-    // 2. Scots Pine Close-up Foliage (~2,700 needle cards per tree, rich high-density)
+    // 2. Overview / Far mode: Simple brown dots on terrain as requested ("تبان نقطة بنية بس مش لازم صخور")
+    // Replaces 3D rocks with 4-triangle brown specks (saving 99.9% GPU cost, 3.4k triangles total for all rocks)
+    const dotGeometry = createBrownDotGeometry(0.55, 0.1)
+    resources.add(dotGeometry)
+
+    const dotMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7a695a, // warm brown rock speck matching Rock 09 diffuse
+      roughness: 0.92,
+      metalness: 0.04,
+      flatShading: true,
+    })
+    resources.add(dotMaterial)
+
+    const farMesh = new THREE.InstancedMesh(dotGeometry, dotMaterial, farMatrices.length)
+    farMesh.name = 'PbrRock_Far'
+    for (let i = 0; i < farMatrices.length; i++) {
+      farMesh.setMatrixAt(i, farMatrices[i])
+    }
+    farMesh.instanceMatrix.needsUpdate = true
+    farMesh.matrixAutoUpdate = false
+    farMesh.receiveShadow = true
+    farMesh.castShadow = false
+
+    scene.add(farMesh)
+    createdMeshes.push(farMesh)
+  } else {
+    // 1. Scots Pine Close-up (Trunk + dense needles)
+    buildMeshGroup(closeTrunkGroups, 'PbrTree_Close_Trunk', true)
     buildMeshGroup(closeFoliageGroups, 'PbrTree_Close_Foliage', false)
 
-    // 3. Scots Pine Far/Overview Foliage (Same Scots Pine model, ~670 needle cards, matching crown silhouette)
+    // 2. Scots Pine Far/Overview (Exact same Scots Pine model, lightweight trunk + overview needles)
+    buildMeshGroup(farTrunkGroups, 'PbrTree_Far_Trunk', false)
     buildMeshGroup(farFoliageGroups, 'PbrTree_Far_Foliage', false)
   }
 

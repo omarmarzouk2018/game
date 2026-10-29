@@ -9,15 +9,16 @@ export type TerrainSample = {
  * Unified island biome classification enumeration.
  * Single source of truth for terrain rendering, grass distribution, tree forests, and rock placement.
  */
-export enum BiomeType {
-  DEEP_WATER = 0,
-  SHALLOW_WATER = 1,
-  SAND_BEACH = 2,
-  FERTILE_GRASS = 3,
-  FOREST_SOIL = 4,
-  ROCK_CLIFF = 5,
-  SNOW_PEAK = 6,
-}
+export const BiomeType = {
+  DEEP_WATER: 0,
+  SHALLOW_WATER: 1,
+  SAND_BEACH: 2,
+  FERTILE_GRASS: 3,
+  FOREST_SOIL: 4,
+  ROCK_CLIFF: 5,
+  SNOW_PEAK: 6,
+} as const
+export type BiomeType = (typeof BiomeType)[keyof typeof BiomeType]
 
 export type IslandTerrain = {
   width: number
@@ -132,8 +133,8 @@ function heightAt(x: number, z: number, random: number): number {
     + 0.026 * Math.sin(normalizedX * 17 + normalizedZ * 13)
   const radius = Math.sqrt((normalizedX / 0.92) ** 2 + (normalizedZ / 0.92) ** 2) + radialNoise
   const island = 1 - smoothstep(0.91, 1.045, radius)
-  const mapEdge = Math.max(Math.abs(normalizedX), Math.abs(normalizedZ))
-  const edgeFalloff = 1 - smoothstep(0.86, 0.96, mapEdge)
+  const radialMapEdge = Math.hypot(normalizedX / 0.94, normalizedZ / 0.94)
+  const edgeFalloff = 1 - smoothstep(0.88, 0.98, radialMapEdge)
   const islandFootprint = island * edgeFalloff
   // A broad notch opens the western coast while leaving the adjacent inland shore intact.
   const harbor = gaussian(normalizedX, normalizedZ, -0.68, 0, 0.055, 0.5)
@@ -168,8 +169,6 @@ function heightAt(x: number, z: number, random: number): number {
 
   // Coastal topography profile:
   // - The front face of the island (South, normalizedZ < 0.05) is a grand, continuous beach.
-  // - In the center of this front beach (normalizedX near 0, normalizedZ < -0.10), the slope into the
-  //   water is ultra-gentle ("ميول اخف جدااا"), creating an expansive crystal-clear shallow lagoon.
   // - The western coast features a sheltered harbor bay.
   // - The sides (East & West) and the rear (North) consist of steep rocky cliffs plunging into deep water.
   const isHarbor = gaussian(normalizedX, normalizedZ, -0.68, 0, 0.14, 0.55)
@@ -183,49 +182,42 @@ function heightAt(x: number, z: number, random: number): number {
   const beachFactor = Math.min(1.0, Math.max(harborBeach, frontBeach))
   const cliffFactor = 1.0 - beachFactor
 
-  // Gentle southern plain gradient: the southern half slopes gracefully down towards the front beach,
+  // Gentle southern plain gradient: slopes gracefully down towards the front beach,
   // preventing any sudden 5m cliffs or steep ledges between the inland grass and the sand.
-  const southGrad = smoothstep(-0.25, -0.78, normalizedZ) * frontX
+  const southGrad = smoothstep(-0.20, -0.76, normalizedZ) * frontX
   const southDescent = southGrad * 0.72
   const coastalInlandHeight = Math.max(0.65, preTerrace - southDescent + terrace + variation)
   const cliffInlandHeight = Math.max(1.25, preTerrace + terrace + variation)
   const islandCoverage = islandFootprint * harborCut
 
-  // Center front beach with ultra-gentle slope into the water
-  const centerBeachX = smoothstep(0.34, 0.04, Math.abs(normalizedX))
-  const centerBeachZ = smoothstep(-0.06, -0.28, normalizedZ)
-  const isCenterFront = centerBeachX * centerBeachZ
+  // Smooth, organic center lagoon bathymetry (Gaussian bell curve without any boxy steps)
+  const centerLagoon = Math.exp(-3.2 * normalizedX * normalizedX) * smoothstep(0.10, -0.40, normalizedZ)
 
   // Seabed bathymetry:
   // - Steep cliffs: seabed drops precipitously to deep ocean (-5.8m) right off the rock edge.
-  // - Standard beaches: gentle slope extending outward into the water.
-  // - Ultra-gentle center beach: extremely flat slope extending far out into the ocean
-  //   (water stays ultra-shallow 0.08m - 0.45m for an expansive distance, creating crystal clear water).
+  // - Beaches: gentle slope extending outward into the water with a wider translucent lagoon in the center.
   const cliffSeabed = 1.2 + 4.6 * smoothstep(0.91, 1.01, radius)
-  const standardBeachSeabed = 0.15 + 5.65 * smoothstep(0.86, 1.38, radius)
-  const ultraGentleSeabed = 0.08 + 0.95 * smoothstep(0.86, 1.35, radius) + 4.77 * smoothstep(1.30, 1.75, radius)
-  const beachSeabed = (1.0 - isCenterFront) * standardBeachSeabed + isCenterFront * ultraGentleSeabed
+  const beachSeabed = 0.12 + 5.68 * smoothstep(0.86, 1.38 + 0.32 * centerLagoon, radius)
 
-  // Steep shoreline cliff ramp for rocky coasts
-  const cliffShore = smoothstep(0.0, 0.22, islandCoverage)
-  const cliffHeight = cliffInlandHeight * HEIGHT_SCALE * cliffShore - cliffSeabed * (1 - islandCoverage)
-
-  // Gentle beach profile: completely seamless, smooth, continuous incline from sea to plains.
-  // Eliminates any steep gray cliffs or sudden ledges behind the beach.
-  let beachHeight: number
-  if (islandCoverage < 0.07) {
-    const uw = islandCoverage / 0.07
-    beachHeight = -beachSeabed * (1 - smoothstep(0.0, 1.0, uw))
-  } else {
-    // Soft, smooth continuous roll from shoreline (0.05m) up into the inland plains
-    const t = (islandCoverage - 0.07) / 0.88
-    const smoothT = smoothstep(0.0, 1.0, Math.min(1.0, t))
-    // Soft curve: expansive and gentle near the sand, rolling seamlessly into lush grass
-    const gentleT = Math.pow(smoothT, 1.55)
-    beachHeight = 0.05 + (coastalInlandHeight * HEIGHT_SCALE - 0.05) * gentleT
+  // Unified shoreline threshold:
+  // Both rocky cliffs and sandy beaches cross sea level zero (height = 0) at the EXACT same
+  // continuous contour threshold, completely eliminating any shoreline disconnection or steps.
+  const shoreThreshold = 0.06
+  if (islandCoverage <= shoreThreshold) {
+    const uw = islandCoverage / shoreThreshold
+    const seabed = cliffFactor * cliffSeabed + (1 - cliffFactor) * beachSeabed
+    return -seabed * (1 - smoothstep(0.0, 1.0, uw))
   }
 
-  return cliffFactor * cliffHeight + (1 - cliffFactor) * beachHeight
+  const t = Math.min(1.0, (islandCoverage - shoreThreshold) / (1.0 - shoreThreshold))
+  const cliffRise = smoothstep(0.0, 0.20, t)
+  const cliffLandHeight = cliffInlandHeight * HEIGHT_SCALE * cliffRise
+
+  const smoothT = smoothstep(0.0, 1.0, t)
+  const gentleT = Math.pow(smoothT, 1.55)
+  const beachLandHeight = (coastalInlandHeight * HEIGHT_SCALE) * gentleT
+
+  return cliffFactor * cliffLandHeight + (1 - cliffFactor) * beachLandHeight
 }
 
 let defaultIslandTerrain: IslandTerrain | null = null

@@ -5,7 +5,7 @@ import { createCameraController } from '../camera'
 import { createFrameRateMonitor, type FrameRateReading } from './FrameRateMonitor'
 import { createIslandTerrain } from './terrain'
 import { addGrass } from './grass'
-import { addRocks, localRockDocumentUrl } from './rocks'
+import { addRocks } from './rocks'
 import { addTrees } from './trees'
 import { addOcean } from './ocean'
 import { createTerrainGeometry } from './terrainMesh'
@@ -83,7 +83,7 @@ export async function createIslandScene(
   const defaultRoadNetwork = options.roadNetwork ?? new RoadNetwork()
   const defaultBuildingManager = options.buildingManager ?? new BuildingManager()
   const defaultBuildingValidator = new BuildingValidator()
-  const fallbackTerrain = { width: 0, depth: 0, segments: 0, heights: new Float32Array(0), landMask: new Uint8Array(0) }
+  const fallbackTerrain = { width: 0, depth: 0, segments: 0, heights: new Float32Array(0), landMask: new Uint8Array(0), biomes: new Uint8Array(0) }
   const defaultBuildingPlacement = options.buildingPlacement ?? new BuildingPlacement(
     fallbackTerrain,
     defaultBuildingManager,
@@ -238,6 +238,8 @@ export async function createIslandScene(
 
     const animateAnimals = addAnimals(scene, terrain, undefined, resources)
     const animateBirds = addBirds(scene, undefined, resources)
+    const animalObjects = (animateAnimals as unknown as { animals?: THREE.Object3D[] }).animals ?? null
+    const birdObjects = (animateBirds as unknown as { birds?: THREE.Object3D[] }).birds ?? null
     const animateShips = addShips(scene, undefined, resources)
 
     const raycaster = new THREE.Raycaster()
@@ -367,17 +369,11 @@ export async function createIslandScene(
     window.addEventListener('pointermove', onGlobalPointerMove)
 
     const loader = new GLTFLoader()
-    const rockUrl = localRockDocumentUrl()
+    // The brown rock asset (rock-09) is completely removed as requested.
+    // The island exclusively uses natural grey granite/slate cliff rocks.
     const models = [
       { url: pineUrl, label: 'mature scots pine', kind: 'tree' as const },
-      { url: rockUrl, label: 'rock', kind: 'rock' as const },
     ]
-    let rockUrlRevoked = false
-    const revokeRockUrl = () => {
-      if (rockUrlRevoked) return
-      rockUrlRevoked = true
-      URL.revokeObjectURL(rockUrl)
-    }
 
     void Promise.all(
       models.map(async ({ url, label, kind }) => {
@@ -413,12 +409,12 @@ export async function createIslandScene(
             fallbackRockMeshes,
             pbrTreeMeshes,
             pbrRockMeshes,
+            animalObjects,
+            birdObjects,
           })
           if (renderer) renderer.shadowMap.needsUpdate = true
         } catch (error) {
           console.warn(`Optional environment ${label} model failed to load; terrain will remain available.`, error)
-        } finally {
-          if (url === rockUrl) revokeRockUrl()
         }
       }),
     )
@@ -509,6 +505,8 @@ export async function createIslandScene(
         fallbackRockMeshes,
         pbrTreeMeshes,
         pbrRockMeshes,
+        animalObjects,
+        birdObjects,
       })
       updateFogForFitDistance(camera.position.distanceTo(islandCenter))
       animateOcean((time - startTime) / 1000)
@@ -550,7 +548,6 @@ export async function createIslandScene(
         renderer.domElement.removeEventListener('contextmenu', onSceneContextMenu)
       }
       window.removeEventListener('pointermove', onGlobalPointerMove)
-      revokeRockUrl()
       window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('resize', resize)
       document.removeEventListener('visibilitychange', onVisibilityChange)

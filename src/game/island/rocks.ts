@@ -115,6 +115,7 @@ export function addRocks(
     variantPlacements[i % variantCount].push(placements[i])
   }
 
+  // Natural grey granite and mountain cliff palette (no brown colors!)
   const rockPalette = [
     0x6e706c, // weathered granite slate
     0x7b7d76, // rocky cliff grey
@@ -155,11 +156,11 @@ export function addRocks(
       const iz = Math.round(z * 10)
 
       const isShore = sample.height <= 1.45
-      // Scale rocks prominently on steep slopes to form physical 3D mountain cliffs
-      const baseScale = isShore ? 1.4 : 3.4 + Math.min(2.4, (slope - 20.0) * 0.1)
-      const s = baseScale * (0.82 + (hash2D(ix, iz, 1493) * 0.5 + 0.5) * 0.36)
+      // Scaled realistically: shore rocks ~0.6m height, mountain rocks ~1.0m height
+      const baseScale = isShore ? 0.9 : 1.35 + Math.min(0.4, (slope - 20.0) * 0.02)
+      const s = baseScale * (0.85 + (hash2D(ix, iz, 1493) * 0.5 + 0.5) * 0.3)
 
-      const embedOffset = isShore ? 0.12 * s : 0.22 * s
+      const embedOffset = isShore ? 0.04 * s : 0.08 * s
       position.set(x, sample.height - embedOffset, z)
 
       if (isShore || slope < 20.0) {
