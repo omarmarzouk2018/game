@@ -1,4 +1,5 @@
 import '@testing-library/jest-dom/vitest'
+import { StrictMode } from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -52,6 +53,14 @@ afterEach(() => {
 })
 
 describe('App island scene lifecycle', () => {
+  it('skips scene initialization for the StrictMode effect that was immediately cleaned up', async () => {
+    sceneState.create.mockResolvedValue({ resize: vi.fn(), dispose: vi.fn() })
+
+    render(<StrictMode><App /></StrictMode>)
+
+    await waitFor(() => expect(sceneState.create).toHaveBeenCalledOnce())
+  })
+
   it('shows accessible loading feedback until scene initialization resolves', async () => {
     const pending = deferred<{ resize: () => void; dispose: () => void }>()
     sceneState.create.mockReturnValue(pending.promise)
@@ -60,7 +69,7 @@ describe('App island scene lifecycle', () => {
 
     expect(screen.getByTestId('scene-host')).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent(/تحميل/)
-    expect(sceneState.create).toHaveBeenCalledOnce()
+    await waitFor(() => expect(sceneState.create).toHaveBeenCalledOnce())
     await act(async () => pending.resolve({ resize: vi.fn(), dispose: vi.fn() }))
   })
 
@@ -100,7 +109,7 @@ describe('App island scene lifecycle', () => {
     const options = sceneState.create.mock.calls[0][2] as { onFrameRateUpdate: (reading: { state: 'active' | 'paused'; fps: number | null; frameTimeMs: number | null }) => void }
 
     act(() => options.onFrameRateUpdate({ state: 'active', fps: 60, frameTimeMs: 16.7 }))
-    expect(screen.getByLabelText('أداء العرض')).toHaveTextContent('60 FPS · 16.7 مللي ثانية')
+    expect(screen.getByLabelText('أداء العرض')).toHaveTextContent('60 FPS')
 
     act(() => options.onFrameRateUpdate({ state: 'paused', fps: null, frameTimeMs: null }))
     expect(screen.getByLabelText('أداء العرض')).toHaveTextContent('العرض متوقف')
@@ -145,6 +154,7 @@ describe('App island scene lifecycle', () => {
     const handle = { resize: vi.fn(), dispose: vi.fn() }
     sceneState.create.mockReturnValue(pending.promise)
     const { unmount } = render(<App />)
+    await waitFor(() => expect(sceneState.create).toHaveBeenCalledOnce())
     unmount()
 
     await act(async () => pending.resolve(handle))

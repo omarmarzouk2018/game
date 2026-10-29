@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import pineUrl from '../../assets/environment/trees/mature-scots-pine.glb?url'
-import { createCameraController } from './CameraController'
+import { createCameraController } from '../camera'
 import { createFrameRateMonitor, type FrameRateReading } from './FrameRateMonitor'
 import { createIslandTerrain } from './terrain'
 import { addGrass } from './grass'
@@ -12,6 +12,15 @@ import { createTerrainGeometry } from './terrainMesh'
 import { addAnimals, addBirds } from './wildlife'
 import { addShips } from './ships'
 import { addInstances } from './environmentModels'
+import { LevelOfDetailManager } from './lodManager'
+import { RoadNetwork } from '../roads/RoadNetwork'
+import { RoadBuilder } from '../roads/RoadBuilder'
+import { RoadRenderer } from '../roads/RoadRenderer'
+import { EconomyManager } from '../economy/EconomyManager'
+import { BuildingManager } from '../buildings/BuildingManager'
+import { BuildingValidator } from '../buildings/BuildingValidator'
+import { BuildingPlacement } from '../buildings/BuildingPlacement'
+import { BuildingRenderer } from '../buildings/BuildingRenderer'
 
 // Re-export modular components for backward compatibility and clean API access
 export * from './grass'
@@ -22,21 +31,34 @@ export * from './terrainMesh'
 export * from './wildlife'
 export * from './ships'
 export * from './environmentModels'
+export * from './lodManager'
+export * from '../buildings'
 
 export type IslandSceneHandle = {
   resize(): void
   dispose(): void
+  roadNetwork: RoadNetwork
+  roadBuilder: RoadBuilder
+  economyManager: EconomyManager
+  lodManager: LevelOfDetailManager
+  buildingManager: BuildingManager
+  buildingPlacement: BuildingPlacement
 }
 
 export type IslandSceneOptions = {
   onFrameRateUpdate?: (reading: FrameRateReading) => void
+  roadNetwork?: RoadNetwork
+  roadBuilder?: RoadBuilder
+  economyManager?: EconomyManager
+  buildingManager?: BuildingManager
+  buildingPlacement?: BuildingPlacement
 }
 
 const terrainSeed = 41723
 
 /**
  * Orchestrates the 3D Island scene: initializes WebGL renderer, camera controller,
- * lighting, terrain, vegetation, ocean shaders, optional GLTF assets, and the main animation loop.
+ * lighting, terrain, vegetation, ocean shaders, optional GLTF assets, roads, and the main animation loop.
  */
 export async function createIslandScene(
   container: HTMLElement,
@@ -54,8 +76,32 @@ export async function createIslandScene(
   let previousFrameTime = 0
   let lastFrameRateNotification = 0
   let lastFrameRateState: FrameRateReading['state'] = 'measuring'
+  let initialFrameRatePublished = false
   const frameRateMonitor = createFrameRateMonitor()
-  const noop: IslandSceneHandle = { resize() {}, dispose() {} }
+
+  const defaultEconomy = options.economyManager ?? new EconomyManager(500)
+  const defaultRoadNetwork = options.roadNetwork ?? new RoadNetwork()
+  const defaultBuildingManager = options.buildingManager ?? new BuildingManager()
+  const defaultBuildingValidator = new BuildingValidator()
+  const fallbackTerrain = { width: 0, depth: 0, segments: 0, heights: new Float32Array(0), landMask: new Uint8Array(0) }
+  const defaultBuildingPlacement = options.buildingPlacement ?? new BuildingPlacement(
+    fallbackTerrain,
+    defaultBuildingManager,
+    defaultRoadNetwork,
+    defaultEconomy,
+    defaultBuildingValidator,
+  )
+
+  const noop: IslandSceneHandle = {
+    resize() {},
+    dispose() {},
+    roadNetwork: defaultRoadNetwork,
+    roadBuilder: options.roadBuilder ?? new RoadBuilder(fallbackTerrain, defaultRoadNetwork, defaultEconomy),
+    economyManager: defaultEconomy,
+    lodManager: new LevelOfDetailManager(),
+    buildingManager: defaultBuildingManager,
+    buildingPlacement: defaultBuildingPlacement,
+  }
 
   try {
     const terrain = createIslandTerrain(terrainSeed)
@@ -120,11 +166,11 @@ export async function createIslandScene(
           lastErr = e
         }
       }
-      throw lastErr
+      throw lastErr || new Error('تعذّر تهيئة WebGL على هذا الجهاز أو المتصفح.')
     }
 
     renderer = createRendererWithFallback()
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5))
     renderer.domElement.style.width = '100%'
     renderer.domElement.style.height = '100%'
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -157,18 +203,168 @@ export async function createIslandScene(
     resources.add(terrainGeometry)
     resources.add(terrainMaterial)
     const terrainMesh = new THREE.Mesh(terrainGeometry, terrainMaterial)
+    terrainMesh.name = 'TerrainMesh'
     terrainMesh.receiveShadow = true
     terrainMesh.castShadow = true
     scene.add(terrainMesh)
 
+    // Road & Building System Integration
+    const economyManager = defaultEconomy
+    const roadNetwork = defaultRoadNetwork
+    const roadBuilder = options.roadBuilder ?? new RoadBuilder(terrain, roadNetwork, economyManager)
+    const roadRenderer = new RoadRenderer(scene, terrain, roadNetwork, roadBuilder)
+
+    const buildingManager = options.buildingManager ?? defaultBuildingManager
+    const buildingPlacement = options.buildingPlacement ?? new BuildingPlacement(
+      terrain,
+      buildingManager,
+      roadNetwork,
+      economyManager,
+      defaultBuildingValidator,
+    )
+    const buildingRenderer = new BuildingRenderer(scene, terrain, buildingManager, buildingPlacement)
+
+    const lodManager = new LevelOfDetailManager()
+    let pbrTreeMeshes: THREE.InstancedMesh[] | null = null
+    let pbrRockMeshes: THREE.InstancedMesh[] | null = null
+
     animateOcean = addOcean(scene, terrain, resources)
-    animateGrass = addGrass(scene, terrain, resources)
-    addRocks(scene, terrain, resources)
+    const grassResult = addGrass(scene, terrain, resources, roadNetwork, buildingManager)
+    animateGrass = grassResult
+    const grassMesh = (grassResult as unknown as { mesh?: THREE.InstancedMesh }).mesh ?? null
+    const farGrassMesh = (grassResult as unknown as { farMesh?: THREE.InstancedMesh }).farMesh ?? null
+    const fallbackRockMeshes = addRocks(scene, terrain, resources)
     const fallbackTreeMesh = addTrees(scene, terrain, resources)
 
-    let animateAnimals: (time: number) => void = () => {}
-    let animateBirds: (time: number) => void = () => {}
-    let animateShips: (time: number) => void = () => {}
+    const animateAnimals = addAnimals(scene, terrain, undefined, resources)
+    const animateBirds = addBirds(scene, undefined, resources)
+    const animateShips = addShips(scene, undefined, resources)
+
+    const raycaster = new THREE.Raycaster()
+    const mouse = new THREE.Vector2()
+
+    const getTerrainIntersection = (event: MouseEvent): THREE.Vector3 | null => {
+      if (!renderer) return null
+      const rect = renderer.domElement.getBoundingClientRect()
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1
+      camera.updateMatrixWorld()
+      raycaster.setFromCamera(mouse, camera)
+      const intersects = raycaster.intersectObject(terrainMesh, false)
+      if (intersects.length > 0) {
+        return intersects[0].point
+      }
+      return null
+    }
+
+    let rightPointerDownPos: { x: number; y: number } | null = null
+    let lastPointerX = 0
+    let lastPointerY = 0
+
+    const onScenePointerDown = (event: PointerEvent) => {
+      if (event.button === 2) {
+        rightPointerDownPos = { x: event.clientX, y: event.clientY }
+        return
+      }
+      if (event.button !== 0 || event.ctrlKey) return
+      const hit = getTerrainIntersection(event)
+      if (!hit) return
+
+      if (roadBuilder.isActive()) {
+        lastPointerX = event.clientX
+        lastPointerY = event.clientY
+        roadBuilder.startDrag(hit.x, hit.z)
+      } else if (buildingPlacement.isActive()) {
+        buildingPlacement.commit()
+      }
+    }
+
+    const onScenePointerMove = (event: PointerEvent) => {
+      lastPointerX = event.clientX
+      lastPointerY = event.clientY
+      const hit = getTerrainIntersection(event)
+      if (hit) {
+        if (roadBuilder.isActive()) {
+          if (roadBuilder.isDragging()) {
+            roadBuilder.updateDrag(hit.x, hit.z)
+          } else {
+            roadBuilder.updateHover(hit.x, hit.z)
+          }
+        } else if (buildingPlacement.isActive()) {
+          buildingPlacement.updateHover(hit.x, hit.z)
+        }
+      }
+    }
+
+    const onGlobalPointerMove = (event: PointerEvent) => {
+      lastPointerX = event.clientX
+      lastPointerY = event.clientY
+      if (roadBuilder.isActive() || buildingPlacement.isActive()) {
+        const hit = getTerrainIntersection(event)
+        if (hit) {
+          if (roadBuilder.isActive() && !roadBuilder.isDragging()) {
+            roadBuilder.updateHover(hit.x, hit.z)
+          } else if (buildingPlacement.isActive()) {
+            buildingPlacement.updateHover(hit.x, hit.z)
+          }
+        }
+      }
+    }
+
+    const onScenePointerUp = (event: PointerEvent) => {
+      if (!roadBuilder.isActive() || event.button !== 0) return
+      if (roadBuilder.isDragging()) {
+        roadBuilder.commit()
+      }
+    }
+
+    const onSceneContextMenu = (event: MouseEvent) => {
+      event.preventDefault()
+      if (rightPointerDownPos) {
+        const dist = Math.hypot(event.clientX - rightPointerDownPos.x, event.clientY - rightPointerDownPos.y)
+        rightPointerDownPos = null
+        if (dist > 6) {
+          return
+        }
+      }
+      if (roadBuilder.isActive()) {
+        if (roadBuilder.isDragging()) {
+          roadBuilder.cancelDrag()
+        } else {
+          roadBuilder.deactivate()
+        }
+      } else if (buildingPlacement.isActive()) {
+        buildingPlacement.deactivate()
+      }
+    }
+
+    const updateCursor = () => {
+      if (renderer) {
+        const isToolActive = roadBuilder.isActive() || buildingPlacement.isActive()
+        renderer.domElement.style.cursor = isToolActive ? 'crosshair' : 'grab'
+        if (isToolActive) {
+          const clientX = lastPointerX > 0 ? lastPointerX : container.clientWidth / 2
+          const clientY = lastPointerY > 0 ? lastPointerY : container.clientHeight / 2
+          const hit = getTerrainIntersection({ clientX, clientY } as MouseEvent)
+          if (hit) {
+            if (roadBuilder.isActive() && !roadBuilder.isDragging()) {
+              roadBuilder.updateHover(hit.x, hit.z)
+            } else if (buildingPlacement.isActive()) {
+              buildingPlacement.updateHover(hit.x, hit.z)
+            }
+          }
+        }
+      }
+    }
+
+    const unsubscribeBuilder = roadBuilder.subscribe(updateCursor)
+    const unsubscribeBuildingPlacement = buildingPlacement.subscribe(updateCursor)
+
+    renderer.domElement.addEventListener('pointerdown', onScenePointerDown)
+    renderer.domElement.addEventListener('pointermove', onScenePointerMove)
+    renderer.domElement.addEventListener('pointerup', onScenePointerUp)
+    renderer.domElement.addEventListener('contextmenu', onSceneContextMenu)
+    window.addEventListener('pointermove', onGlobalPointerMove)
 
     const loader = new GLTFLoader()
     const rockUrl = localRockDocumentUrl()
@@ -202,15 +398,22 @@ export async function createIslandScene(
             })
             return
           }
-          addInstances(scene, model, terrain, resources, kind)
+          const createdMeshes = addInstances(scene, model, terrain, resources, kind)
           if (kind === 'tree') {
-            if (fallbackTreeMesh) fallbackTreeMesh.visible = false
-            animateAnimals = addAnimals(scene, terrain, model)
-            animateBirds = addBirds(scene, model)
+            pbrTreeMeshes = createdMeshes
+          } else {
+            pbrRockMeshes = createdMeshes
           }
-          if (kind === 'rock') {
-            animateShips = addShips(scene, model)
-          }
+          const currentTarget = (camera.userData.islandCameraTarget as THREE.Vector3) || islandCenter
+          const currentCameraDist = camera.position.distanceTo(currentTarget)
+          lodManager.update(currentCameraDist, {
+            grassMesh,
+            farGrassMesh,
+            fallbackTreeMesh,
+            fallbackRockMeshes,
+            pbrTreeMeshes,
+            pbrRockMeshes,
+          })
           if (renderer) renderer.shadowMap.needsUpdate = true
         } catch (error) {
           console.warn(`Optional environment ${label} model failed to load; terrain will remain available.`, error)
@@ -255,6 +458,7 @@ export async function createIslandScene(
       publishFrameRate(reading, performance.now())
     }
 
+    let renderCount = 0
     const render = (time: number) => {
       if (disposed || !renderer) return
       if (document.hidden) {
@@ -262,10 +466,50 @@ export async function createIslandScene(
         animationFrame = window.requestAnimationFrame(render)
         return
       }
+      renderCount++
       if (startTime === null) startTime = time
       const deltaSeconds = previousFrameTime === 0 ? 0 : (time - previousFrameTime) / 1000
       previousFrameTime = time
+
+      if (!initialFrameRatePublished && renderCount >= 3 && deltaSeconds > 0) {
+        initialFrameRatePublished = true
+        const initialFps = Math.max(1, Math.min(120, Math.round(1 / deltaSeconds)))
+        publishFrameRate({
+          state: 'active',
+          fps: initialFps,
+          frameTimeMs: Number((deltaSeconds * 1000).toFixed(1)),
+        }, time)
+      }
       cameraController?.update(deltaSeconds)
+      if (roadBuilder.isDragging() && renderer && deltaSeconds > 0) {
+        const rect = renderer.domElement.getBoundingClientRect()
+        const margin = 35
+        const edgePanSpeed = 35
+        let panX = 0
+        let panY = 0
+        if (lastPointerX >= rect.left && lastPointerX <= rect.left + margin) panX = -1
+        else if (lastPointerX <= rect.right && lastPointerX >= rect.right - margin) panX = 1
+        if (lastPointerY >= rect.top && lastPointerY <= rect.top + margin) panY = -1
+        else if (lastPointerY <= rect.bottom && lastPointerY >= rect.bottom - margin) panY = 1
+
+        if (panX !== 0 || panY !== 0) {
+          cameraController?.panRelative(panX * edgePanSpeed * deltaSeconds, panY * edgePanSpeed * deltaSeconds)
+        }
+        const hit = getTerrainIntersection({ clientX: lastPointerX, clientY: lastPointerY } as MouseEvent)
+        if (hit) {
+          roadBuilder.updateDrag(hit.x, hit.z)
+        }
+      }
+      const currentTarget = (camera.userData.islandCameraTarget as THREE.Vector3) || islandCenter
+      const currentCameraDist = camera.position.distanceTo(currentTarget)
+      lodManager.update(currentCameraDist, {
+        grassMesh,
+        farGrassMesh,
+        fallbackTreeMesh,
+        fallbackRockMeshes,
+        pbrTreeMeshes,
+        pbrRockMeshes,
+      })
       updateFogForFitDistance(camera.position.distanceTo(islandCenter))
       animateOcean((time - startTime) / 1000)
       animateGrass((time - startTime) / 1000)
@@ -287,6 +531,7 @@ export async function createIslandScene(
       ),
       minDistance: 54,
       maxDistance: Math.max(700, fitDistance * 1.5),
+      isInteractionActive: () => roadBuilder.isActive() || buildingPlacement.isActive(),
     })
 
     const dispose = () => {
@@ -294,6 +539,17 @@ export async function createIslandScene(
       disposed = true
       cameraController?.dispose()
       cameraController = undefined
+      unsubscribeBuilder()
+      unsubscribeBuildingPlacement()
+      roadRenderer.dispose()
+      buildingRenderer.dispose()
+      if (renderer) {
+        renderer.domElement.removeEventListener('pointerdown', onScenePointerDown)
+        renderer.domElement.removeEventListener('pointermove', onScenePointerMove)
+        renderer.domElement.removeEventListener('pointerup', onScenePointerUp)
+        renderer.domElement.removeEventListener('contextmenu', onSceneContextMenu)
+      }
+      window.removeEventListener('pointermove', onGlobalPointerMove)
       revokeRockUrl()
       window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('resize', resize)
@@ -324,7 +580,16 @@ export async function createIslandScene(
     resize()
     render(0)
 
-    return { resize, dispose }
+    return {
+      resize,
+      dispose,
+      roadNetwork,
+      roadBuilder,
+      economyManager,
+      lodManager,
+      buildingManager,
+      buildingPlacement,
+    }
   } catch (error) {
     console.error('IslandScene error:', error)
     disposed = true

@@ -144,32 +144,55 @@ function heightAt(x: number, z: number, random: number): number {
   const inlandHeight = Math.max(1.25, preTerrace + terrace + variation)
   const islandCoverage = islandFootprint * harborCut
 
-  // Dual coastal profile: exposed headlands (east coast and rear mountain coast)
-  // feature steep rocky cliffs, while sheltered bays (western harbor and southern shores)
-  // feature gentle sandy beach shelves where palm trees grow.
-  const isEastCliff = smoothstep(0.12, 0.35, normalizedX)
-  const isRearCliff = smoothstep(0.15, 0.40, normalizedZ)
-  const cliffFactor = Math.max(isEastCliff, isRearCliff)
+  // Coastal topography profile:
+  // - The front face of the island (South, normalizedZ < -0.02) is a grand, continuous beach.
+  // - In the center of this front beach (normalizedX near 0, normalizedZ < -0.10), the slope into the
+  //   water is ultra-gentle ("ميول اخف جدااا"), creating an expansive crystal-clear shallow lagoon.
+  // - The western coast features a sheltered harbor bay.
+  // - The sides (East & West) and the rear (North) consist of steep rocky cliffs plunging into deep water.
+  const isHarbor = gaussian(normalizedX, normalizedZ, -0.68, 0, 0.14, 0.55)
+  const harborBeach = smoothstep(0.06, 0.40, isHarbor)
 
-  const seabedSlope = smoothstep(0.91, 1.05, radius)
-  const seabedDepth = 1.2 + 4.8 * Math.max(0, Math.min(1, seabedSlope - harbor * 0.45))
+  // Continuous sweeping beach along the entire front (South) facade of the island
+  const frontDist = smoothstep(0.68, 0.20, Math.abs(normalizedX))
+  const frontZ = smoothstep(0.04, -0.20, normalizedZ)
+  const frontBeach = frontDist * frontZ
+
+  const beachFactor = Math.min(1.0, Math.max(harborBeach, frontBeach))
+  const cliffFactor = 1.0 - beachFactor
+
+  // Center front beach with ultra-gentle slope into the water
+  const centerBeachX = smoothstep(0.34, 0.04, Math.abs(normalizedX))
+  const centerBeachZ = smoothstep(-0.06, -0.28, normalizedZ)
+  const isCenterFront = centerBeachX * centerBeachZ
+
+  // Seabed bathymetry:
+  // - Steep cliffs: seabed drops precipitously to deep ocean (-5.8m) right off the rock edge.
+  // - Standard beaches: gentle slope extending outward into the water.
+  // - Ultra-gentle center beach: extremely flat slope extending far out into the ocean
+  //   (water stays ultra-shallow 0.08m - 0.45m for an expansive distance, creating crystal clear water).
+  const cliffSeabed = 1.2 + 4.6 * smoothstep(0.91, 1.01, radius)
+  const standardBeachSeabed = 0.15 + 5.65 * smoothstep(0.86, 1.38, radius)
+  const ultraGentleSeabed = 0.08 + 0.95 * smoothstep(0.86, 1.35, radius) + 4.77 * smoothstep(1.30, 1.75, radius)
+  const beachSeabed = (1.0 - isCenterFront) * standardBeachSeabed + isCenterFront * ultraGentleSeabed
 
   // Steep shoreline cliff ramp for rocky coasts
-  const cliffShore = smoothstep(0.0, 0.25, islandCoverage)
-  const cliffHeight = inlandHeight * HEIGHT_SCALE * cliffShore - seabedDepth * (1 - islandCoverage)
+  const cliffShore = smoothstep(0.0, 0.22, islandCoverage)
+  const cliffHeight = inlandHeight * HEIGHT_SCALE * cliffShore - cliffSeabed * (1 - islandCoverage)
 
-  // Gentle beach shelf for sheltered shores and bays
-  const shelfEnd = 0.48
+  // Gentle beach profile: completely seamless, smooth, continuous incline from sea to plains.
+  // Eliminates any steep gray cliffs or sudden ledges behind the beach.
   let beachHeight: number
   if (islandCoverage < 0.07) {
     const uw = islandCoverage / 0.07
-    beachHeight = -seabedDepth * (1 - smoothstep(0.0, 1.0, uw))
-  } else if (islandCoverage < shelfEnd) {
-    const shelfT = (islandCoverage - 0.07) / (shelfEnd - 0.07)
-    beachHeight = 0.05 + 1.55 * smoothstep(0.0, 1.0, shelfT)
+    beachHeight = -beachSeabed * (1 - smoothstep(0.0, 1.0, uw))
   } else {
-    const inlandT = smoothstep(shelfEnd, shelfEnd + 0.30, islandCoverage)
-    beachHeight = 1.6 + (inlandHeight * HEIGHT_SCALE - 1.6) * inlandT
+    // Soft, smooth continuous roll from shoreline (0.05m) up into the inland plains
+    const t = (islandCoverage - 0.07) / 0.88
+    const smoothT = smoothstep(0.0, 1.0, Math.min(1.0, t))
+    // Soft curve: expansive and gentle near the sand, rolling seamlessly into lush grass
+    const gentleT = Math.pow(smoothT, 1.55)
+    beachHeight = 0.05 + (inlandHeight * HEIGHT_SCALE - 0.05) * gentleT
   }
 
   return cliffFactor * cliffHeight + (1 - cliffFactor) * beachHeight
@@ -284,6 +307,18 @@ export function sampleTerrainSlope(terrain: IslandTerrain, x: number, z: number)
   return Math.atan(Math.hypot(dz_dx, dz_dz)) * (180 / Math.PI)
 }
 
+export function sampleTerrainNormal(terrain: IslandTerrain, x: number, z: number): { nx: number; ny: number; nz: number } {
+  const delta = 1.0
+  const hRight = sampleIslandTerrain(terrain, x + delta, z).height
+  const hLeft = sampleIslandTerrain(terrain, x - delta, z).height
+  const hFront = sampleIslandTerrain(terrain, x, z + delta).height
+  const hBack = sampleIslandTerrain(terrain, x, z - delta).height
+  const dz_dx = (hRight - hLeft) / (2 * delta)
+  const dz_dz = (hFront - hBack) / (2 * delta)
+  const len = Math.hypot(-dz_dx, 1, -dz_dz)
+  return { nx: -dz_dx / len, ny: 1 / len, nz: -dz_dz / len }
+}
+
 /**
  * Checks if a terrain coordinate is buildable:
  * - Must be above water and within plains/foothills height range (1.2 <= height <= 8.0)
@@ -319,4 +354,93 @@ export function isBuildable(
   const slopeDeg = sampleTerrainSlope(terrain, x, z)
   return slopeDeg < 15.0
 }
+
+/**
+ * Checks if a coordinate on the island terrain is sand (beach, shoreline sand, or front beach shelf).
+ */
+export function isTerrainSand(
+  terrainOrX: IslandTerrain | number,
+  xOrZ: number,
+  zOrUndefined?: number,
+): boolean {
+  let terrain: IslandTerrain
+  let x: number
+  let z: number
+  if (typeof terrainOrX === 'number') {
+    if (!defaultIslandTerrain) {
+      defaultIslandTerrain = createIslandTerrain(41723)
+    }
+    terrain = defaultIslandTerrain
+    x = terrainOrX
+    z = xOrZ
+  } else {
+    terrain = terrainOrX
+    x = xOrZ
+    z = zOrUndefined!
+  }
+
+  const sample = sampleIslandTerrain(terrain, x, z)
+  if (!sample.land) {
+    return false
+  }
+
+  // Any terrain below the grass line is sandy beach or wet sand
+  if (sample.height < 2.2) {
+    return true
+  }
+
+  // Wide sandy beach zone along the southern coast (front beach shelf)
+  const normalizedX = x / (terrain.width / 2)
+  const normalizedZ = z / (terrain.depth / 2)
+  const isFrontBeachZone = normalizedZ < -0.02 && Math.abs(normalizedX) < 0.68 && sample.height < 3.2
+  if (isFrontBeachZone) {
+    return true
+  }
+
+  return false
+}
+
+/**
+ * Checks if a coordinate on the island terrain is rock (steep cliffs, crags, or high mountain rocky peaks).
+ */
+export function isTerrainRock(
+  terrainOrX: IslandTerrain | number,
+  xOrZ: number,
+  zOrUndefined?: number,
+): boolean {
+  let terrain: IslandTerrain
+  let x: number
+  let z: number
+  if (typeof terrainOrX === 'number') {
+    if (!defaultIslandTerrain) {
+      defaultIslandTerrain = createIslandTerrain(41723)
+    }
+    terrain = defaultIslandTerrain
+    x = terrainOrX
+    z = xOrZ
+  } else {
+    terrain = terrainOrX
+    x = xOrZ
+    z = zOrUndefined!
+  }
+
+  const sample = sampleIslandTerrain(terrain, x, z)
+  if (!sample.land) {
+    return false
+  }
+
+  // High mountain elevations above the tree line where soil turns to rock and snow
+  if (sample.height > 10.5) {
+    return true
+  }
+
+  // Steep slopes where terrain shaders render rocky cliff faces and 3D boulders spawn
+  const slope = sampleTerrainSlope(terrain, x, z)
+  if (slope >= 20.0) {
+    return true
+  }
+
+  return false
+}
+
 

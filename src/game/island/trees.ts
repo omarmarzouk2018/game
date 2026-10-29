@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { DECIDUOUS_MODEL_DATA } from './treeModelData'
 import {
   hash2D,
+  isTerrainRock,
+  isTerrainSand,
   sampleIslandTerrain,
   sampleTerrainSlope,
   valueNoise2D,
@@ -54,7 +56,13 @@ export function createTreePlacements(terrain: IslandTerrain): Array<[number, num
       const x = (centerX + Math.cos(angle) * radius) * terrain.width / 2
       const z = (centerZ + Math.sin(angle) * radius) * terrain.depth / 2
       const sample = sampleIslandTerrain(terrain, x, z)
-      if (sample.land && sample.height >= 1.5 && sample.height <= 14 && z < terrain.depth * 0.25 && !(Math.abs(x) < 13 && z < 22)) {
+      if (
+        sample.land &&
+        !isTerrainSand(terrain, x, z) &&
+        !isTerrainRock(terrain, x, z) &&
+        z < terrain.depth * 0.25 &&
+        !(Math.abs(x) < 13 && z < 22)
+      ) {
         placements.push([x, z])
       }
     }
@@ -63,73 +71,136 @@ export function createTreePlacements(terrain: IslandTerrain): Array<[number, num
 }
 
 /**
- * Determines forest distribution across the island, separating dense woodland from sparse shoreline trees.
+ * 3 distinct forest centers situated on the outer edges/outskirts of the island.
+ * Leaves the central plains and town clearing open for settlements and exploration.
+ */
+export const FOREST_CENTERS = [
+  { name: 'South-West Edge', x: -100, z: -65, radius: 96 },
+  { name: 'South-East Edge', x: 105, z: -70, radius: 96 },
+  { name: 'North-East Edge', x: 75, z: 45, radius: 91 },
+] as const
+
+interface WoodlandCandidate {
+  x: number
+  z: number
+  coreFactor: number
+  minSpacing: number
+  hash: number
+}
+
+/**
+ * Determines forest distribution across the island, ensuring trees only grow on fertile soil.
+ * Trees are strictly prohibited on sand (beaches/shores) and rock (steep cliffs, boulders, mountain peaks).
+ * Places 3 forest centers on the outskirts/edges of the island.
+ * Spacing between trees increases progressively from the grove centers outward to sparse peripheries.
  */
 export function createForestPlacements(terrain: IslandTerrain): ForestPlacements {
+  // Trees never spawn on sand (beaches/shores) or rock (cliffs/mountain crags)
   const shoreline: Array<[number, number]> = []
   const woodland: Array<[number, number]> = []
 
-  const step = 1.7
   const halfW = terrain.width / 2 - 5
   const halfD = terrain.depth / 2 - 5
 
-  for (let gz = -halfD; gz <= halfD; gz += step) {
-    for (let gx = -halfW; gx <= halfW; gx += step) {
+  // Woodland trees: 3 Forest Centers on island outskirts with core-to-periphery spacing gradient
+  // Center is tightly packed, while outskirts have wide distances between trees
+  const candidates: WoodlandCandidate[] = []
+  const woodlandStep = 2.0
+  const minSpacingCenter = 2.35 // Tighter center spacing (meters)
+  const maxSpacingEdge = 13.5 // Wider edge spacing (meters)
+
+  for (let gz = -halfD; gz <= halfD; gz += woodlandStep) {
+    for (let gx = -halfW; gx <= halfW; gx += woodlandStep) {
       const ix = Math.round(gx * 10)
       const iz = Math.round(gz * 10)
-      const jx = hash2D(ix, iz, 14221) * (step * 0.42)
-      const jz = hash2D(ix, iz, 82913) * (step * 0.42)
+      const jx = hash2D(ix, iz, 14221) * (woodlandStep * 0.32)
+      const jz = hash2D(ix, iz, 82913) * (woodlandStep * 0.32)
       const x = gx + jx
       const z = gz + jz
 
       const sample = sampleIslandTerrain(terrain, x, z)
-      if (!sample.land || sample.height < 0.3 || sample.height > 16.5) {
+      // Trees are strictly excluded from water, sand, and rock
+      if (!sample.land || isTerrainSand(terrain, x, z) || isTerrainRock(terrain, x, z)) {
         continue
       }
 
-      const slope = sampleTerrainSlope(terrain, x, z)
-
-      // Keep the original sparse shoreline spacing and density.
-      if (sample.height <= 1.8 && slope < 18.0) {
-        const shorelineHash = hash2D(ix, iz, 31103)
-        if (shorelineHash > 0.68) shoreline.push([x, z])
-        continue
-      }
-
+      // Preserve town clearing for building and exploration
       const inTownClearing = Math.abs(x) < 13 && z > -10 && z < 20
       if (inTownClearing) continue
 
-      // Woodland placements share one tree model across plains and foothills.
-      if (sample.height >= 1.8 && slope < 30.0) {
-        const forestClusterNoise = valueNoise2D(x * 0.045, z * 0.045, 12873)
-        const densityHash = hash2D(ix, iz, 55219)
-        if (forestClusterNoise > -0.25 && densityHash > -0.72) {
-          woodland.push([x, z])
+      // Calculate proximity to the nearest of the 3 edge forest centers
+      let bestCoreFactor = 0
 
-          // Increased forest density: add natural cluster companions in dense forest groves
-          if (forestClusterNoise > 0.08) {
-            const companionHash = hash2D(ix, iz, 38191)
-            if (companionHash > -0.45) {
-              const offsetX = hash2D(ix, iz, 11927) * (step * 0.38)
-              const offsetZ = hash2D(ix, iz, 88231) * (step * 0.38)
-              const cx = x + offsetX
-              const cz = z + offsetZ
-              const cSample = sampleIslandTerrain(terrain, cx, cz)
-              const cSlope = sampleTerrainSlope(terrain, cx, cz)
-              const cInClearing = Math.abs(cx) < 13 && cz > -10 && cz < 20
-              if (
-                !cInClearing &&
-                cSample.land &&
-                cSample.height > 1.8 &&
-                cSample.height <= 16.5 &&
-                cSlope <= 30.0
-              ) {
-                woodland.push([cx, cz])
-              }
-            }
+      for (let k = 0; k < FOREST_CENTERS.length; k += 1) {
+        const center = FOREST_CENTERS[k]
+        const dx = x - center.x
+        const dz = z - center.z
+        const dist = Math.hypot(dx, dz)
+
+        // Organic edge variation so forest borders are natural rather than perfect geometric circles
+        const borderNoise = valueNoise2D(x * 0.05, z * 0.05, 12873 + k * 1000) * 0.25
+        const effectiveRadius = center.radius * (1.0 + borderNoise)
+
+        if (dist < effectiveRadius) {
+          const factor = 1.0 - dist / effectiveRadius
+          if (factor > bestCoreFactor) {
+            bestCoreFactor = factor
           }
         }
       }
+
+      if (bestCoreFactor <= 0.02) continue
+
+      // Non-linear falloff: Keeps the core thicket dense, and dramatically widens spacing towards periphery
+      const densityCurve = Math.pow(bestCoreFactor, 0.85)
+      const minSpacing = maxSpacingEdge - densityCurve * (maxSpacingEdge - minSpacingCenter)
+      const h = hash2D(ix, iz, 55219)
+
+      candidates.push({ x, z, coreFactor: bestCoreFactor, minSpacing, hash: h })
+    }
+  }
+
+  // Sort candidates so forest centers are established first, then intermediate and perimeter zones
+  candidates.sort((a, b) => b.coreFactor - a.coreFactor || b.hash - a.hash)
+
+  // Spatial partitioning grid to guarantee distance requirements
+  const spatialCellSize = 14
+  const grid = new Map<string, Array<[number, number, number]>>()
+
+  for (let i = 0; i < candidates.length; i += 1) {
+    const c = candidates[i]
+    const cx = Math.floor(c.x / spatialCellSize)
+    const cz = Math.floor(c.z / spatialCellSize)
+    const searchRadius = Math.ceil(c.minSpacing / spatialCellSize)
+
+    let tooClose = false
+    for (let ox = -searchRadius; ox <= searchRadius && !tooClose; ox += 1) {
+      for (let oz = -searchRadius; oz <= searchRadius && !tooClose; oz += 1) {
+        const cell = grid.get(`${cx + ox},${cz + oz}`)
+        if (!cell) continue
+        for (let j = 0; j < cell.length; j += 1) {
+          const [ex, ez, eSpacing] = cell[j]
+          const dx = c.x - ex
+          const dz = c.z - ez
+          const distSq = dx * dx + dz * dz
+          const reqDist = Math.max(c.minSpacing, eSpacing * 0.85)
+          if (distSq < reqDist * reqDist) {
+            tooClose = true
+            break
+          }
+        }
+      }
+    }
+
+    if (!tooClose) {
+      woodland.push([c.x, c.z])
+      const cellKey = `${cx},${cz}`
+      let cell = grid.get(cellKey)
+      if (!cell) {
+        cell = []
+        grid.set(cellKey, cell)
+      }
+      cell.push([c.x, c.z, c.minSpacing])
     }
   }
 
@@ -159,6 +230,7 @@ export function addTrees(
   const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.05 })
   resources.add(material)
   const instancedMesh = new THREE.InstancedMesh(geometry, material, placements.length)
+  instancedMesh.name = 'Trees_Procedural'
 
   for (let i = 0; i < placements.length; i += 1) {
     const [x, z] = placements[i]

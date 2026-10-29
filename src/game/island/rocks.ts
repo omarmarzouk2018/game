@@ -11,6 +11,7 @@ import {
 import {
   hash2D,
   sampleIslandTerrain,
+  sampleTerrainNormal,
   sampleTerrainSlope,
   type IslandTerrain,
 } from './terrain'
@@ -43,7 +44,8 @@ export function createRockGeometry(variant = 0, scale = 1.0): THREE.BufferGeomet
  */
 export function createRockPlacements(terrain: IslandTerrain): Array<[number, number]> {
   const placements: Array<[number, number]> = []
-  const step = 2.4
+  // Natural spacing for coastal boulders and mountain crags without overcrowding
+  const step = 5.2
   const halfW = terrain.width / 2 - 5
   const halfD = terrain.depth / 2 - 5
 
@@ -51,8 +53,8 @@ export function createRockPlacements(terrain: IslandTerrain): Array<[number, num
     for (let gx = -halfW; gx <= halfW; gx += step) {
       const ix = Math.round(gx * 10)
       const iz = Math.round(gz * 10)
-      const jx = hash2D(ix, iz, 10291) * (step * 0.42)
-      const jz = hash2D(ix, iz, 88219) * (step * 0.42)
+      const jx = hash2D(ix, iz, 10291) * (step * 0.38)
+      const jz = hash2D(ix, iz, 88219) * (step * 0.38)
       const x = gx + jx
       const z = gz + jz
 
@@ -61,18 +63,30 @@ export function createRockPlacements(terrain: IslandTerrain): Array<[number, num
         continue
       }
 
+      // Keep the front beach and sandy shorelines completely clean of rocks
+      const normalizedX = x / (terrain.width / 2)
+      const normalizedZ = z / (terrain.depth / 2)
+      const isFrontBeachZone = normalizedZ < -0.02 && Math.abs(normalizedX) < 0.68 && sample.height < 3.6
+      if (isFrontBeachZone) {
+        continue
+      }
+
       const slope = sampleTerrainSlope(terrain, x, z)
-      const isShore = sample.height >= 0.95 && sample.height <= 1.45
-      const isCliff = slope >= 20.0 && sample.height > 1.45 && sample.height <= 26.0
+      // Coastal rocks on rocky cliff shores
+      const isShore = slope >= 15.0 && sample.height >= 0.95 && sample.height <= 1.45
+      // Mountain cliffs and steep coastal palisades across all elevations up to 50m
+      const isCliff = slope >= 20.0 && sample.height > 1.45 && sample.height <= 50.0
 
       if (isShore) {
         const shoreHash = hash2D(ix, iz, 33461)
-        if (shoreHash > -0.6) {
+        if (shoreHash > -0.45) {
           placements.push([x, z])
         }
       } else if (isCliff) {
         const cliffHash = hash2D(ix, iz, 66723)
-        if (cliffHash > 0.15) {
+        // High density of 3D mountain rocks across all steep slopes so crags replace flat colored polygons
+        const threshold = slope >= 28.0 ? -0.25 : 0.05
+        if (cliffHash > threshold) {
           placements.push([x, z])
         }
       }
@@ -89,10 +103,11 @@ export function addRocks(
   scene: THREE.Scene,
   terrain: IslandTerrain,
   resources: Set<THREE.Material | THREE.BufferGeometry | THREE.Texture>,
-): void {
+): THREE.InstancedMesh[] {
   const placements = createRockPlacements(terrain)
-  if (placements.length === 0) return
+  if (placements.length === 0) return []
 
+  const createdMeshes: THREE.InstancedMesh[] = []
   const variantCount = ROCK_MODEL_VARIANTS.length
   const variantPlacements: Array<Array<[number, number]>> = Array.from({ length: variantCount }, () => [])
   for (let i = 0; i < placements.length; i += 1) {
@@ -128,27 +143,45 @@ export function addRocks(
     resources.add(material)
 
     const instancedMesh = new THREE.InstancedMesh(geometry, material, instances.length)
+    instancedMesh.name = `Rock_Variant_${v}`
 
     for (let i = 0; i < instances.length; i += 1) {
       const [x, z] = instances[i]
       const sample = sampleIslandTerrain(terrain, x, z)
+      const slope = sampleTerrainSlope(terrain, x, z)
+      const normal = sampleTerrainNormal(terrain, x, z)
       const ix = Math.round(x * 10)
       const iz = Math.round(z * 10)
 
       const isShore = sample.height <= 1.45
-      const baseScale = isShore ? 1.4 : 2.5
-      const s = baseScale * (0.8 + (hash2D(ix, iz, 1493) * 0.5 + 0.5) * 0.5)
+      // Scale rocks prominently on steep slopes to form physical 3D mountain cliffs
+      const baseScale = isShore ? 1.4 : 3.4 + Math.min(2.4, (slope - 20.0) * 0.1)
+      const s = baseScale * (0.82 + (hash2D(ix, iz, 1493) * 0.5 + 0.5) * 0.36)
 
-      const embedOffset = 0.12 * s
+      const embedOffset = isShore ? 0.12 * s : 0.22 * s
       position.set(x, sample.height - embedOffset, z)
 
-      const yaw = (hash2D(ix, iz, 8831) + 1) * Math.PI
-      const pitch = hash2D(ix, iz, 5521) * 0.22
-      const roll = hash2D(ix, iz, 7719) * 0.22
-      euler.set(pitch, yaw, roll, 'YXZ')
-      rotation.setFromEuler(euler)
+      if (isShore || slope < 20.0) {
+        const yaw = (hash2D(ix, iz, 8831) + 1) * Math.PI
+        const pitch = hash2D(ix, iz, 5521) * 0.22
+        const roll = hash2D(ix, iz, 7719) * 0.22
+        euler.set(pitch, yaw, roll, 'YXZ')
+        rotation.setFromEuler(euler)
+      } else {
+        // Orient and tilt 3D cliff rocks along the mountain slope normal
+        const slopeAngle = (slope * Math.PI) / 180
+        const yaw = Math.atan2(normal.nx, normal.nz) + hash2D(ix, iz, 8831) * 0.35
+        const pitch = slopeAngle * 0.6 + hash2D(ix, iz, 5521) * 0.15
+        const roll = hash2D(ix, iz, 7719) * 0.2
+        euler.set(pitch, yaw, roll, 'YXZ')
+        rotation.setFromEuler(euler)
+      }
 
-      scaleVec.set(s, s * (0.85 + (hash2D(ix, iz, 4423) * 0.5 + 0.5) * 0.3), s)
+      scaleVec.set(
+        s * (0.9 + (hash2D(ix, iz, 4423) * 0.5 + 0.5) * 0.25),
+        s * (0.8 + (hash2D(ix, iz, 9917) * 0.5 + 0.5) * 0.4),
+        s * (0.9 + (hash2D(ix, iz, 2213) * 0.5 + 0.5) * 0.25),
+      )
       matrix.compose(position, rotation, scaleVec)
       instancedMesh.setMatrixAt(i, matrix)
     }
@@ -157,7 +190,10 @@ export function addRocks(
     instancedMesh.castShadow = true
     instancedMesh.receiveShadow = true
     scene.add(instancedMesh)
+    createdMeshes.push(instancedMesh)
   }
+
+  return createdMeshes
 }
 
 /**

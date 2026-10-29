@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { createIslandScene, type IslandSceneHandle } from './game/island/IslandScene'
 import type { FrameRateReading } from './game/island/FrameRateMonitor'
+import { EconomyManager } from './game/economy/EconomyManager'
+import { RoadBuilder } from './game/roads/RoadBuilder'
+import { BuildingPlacement } from './game/buildings/BuildingPlacement'
+import { EconomyBar } from './ui/EconomyBar'
+import { BuildMenu, BuildCursorGhost } from './ui/buildMenu'
+import { RoadPreviewOverlay } from './ui/RoadPreviewOverlay'
 
 function App() {
   const containerRef = useRef<HTMLElement>(null)
@@ -9,6 +15,9 @@ function App() {
   const [error, setError] = useState('')
   const [rotationActive, setRotationActive] = useState(false)
   const [frameRate, setFrameRate] = useState<FrameRateReading>({ state: 'measuring', fps: null, frameTimeMs: null })
+  const [economy, setEconomy] = useState<EconomyManager | null>(null)
+  const [roadBuilder, setRoadBuilder] = useState<RoadBuilder | null>(null)
+  const [buildingPlacement, setBuildingPlacement] = useState<BuildingPlacement | null>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -42,33 +51,54 @@ function App() {
       setLoading(false)
     }
 
-    void createIslandScene(container, onFatalError, {
-      onFrameRateUpdate: (reading) => {
-        if (active) setFrameRate(reading)
-      },
-    }).then((handle) => {
-      if (!active) {
-        handle.dispose()
-        return
-      }
-      scene = handle
-      setLoading(false)
-
-      if (typeof ResizeObserver !== 'undefined') {
-        observer = new ResizeObserver(() => scene?.resize())
-        observer.observe(container)
-      } else {
-        window.addEventListener('resize', handle.resize)
-      }
-    }).catch((reason: unknown) => {
+    queueMicrotask(() => {
       if (!active) return
-      const detail = reason instanceof Error ? ` (${reason.message})` : ''
-      setError(`تعذّر تحميل مشهد الجزيرة. يرجى المحاولة مرة أخرى.${detail}`)
-      setLoading(false)
+
+      void createIslandScene(container, onFatalError, {
+        onFrameRateUpdate: (reading) => {
+          if (active) {
+            setFrameRate((prev) => {
+              if (reading.state === 'paused') {
+                return reading
+              }
+              return {
+                ...reading,
+                fps: reading.fps ?? prev.fps,
+                frameTimeMs: reading.frameTimeMs ?? prev.frameTimeMs,
+              }
+            })
+          }
+        },
+      }).then((handle) => {
+        if (!active) {
+          handle.dispose()
+          return
+        }
+        scene = handle
+        setEconomy(handle.economyManager)
+        setRoadBuilder(handle.roadBuilder)
+        setBuildingPlacement(handle.buildingPlacement)
+        setLoading(false)
+
+        if (typeof ResizeObserver !== 'undefined') {
+          observer = new ResizeObserver(() => scene?.resize())
+          observer.observe(container)
+        } else {
+          window.addEventListener('resize', handle.resize)
+        }
+      }).catch((reason: unknown) => {
+        if (!active) return
+        const detail = reason instanceof Error ? ` (${reason.message})` : ''
+        setError(`تعذّر تحميل مشهد الجزيرة. يرجى المحاولة مرة أخرى.${detail}`)
+        setLoading(false)
+      })
     })
 
     return () => {
       active = false
+      setEconomy(null)
+      setRoadBuilder(null)
+      setBuildingPlacement(null)
       observer?.disconnect()
       window.removeEventListener('resize', scene?.resize ?? (() => {}))
       scene?.dispose()
@@ -93,10 +123,18 @@ function App() {
       )}
       {!loading && !error && (
         <>
+        <aside className="scene-top-hud">
+          <EconomyBar economy={economy} />
+        </aside>
+
+        <BuildMenu roadBuilder={roadBuilder} buildingPlacement={buildingPlacement} />
+        <BuildCursorGhost roadBuilder={roadBuilder} buildingPlacement={buildingPlacement} />
+        <RoadPreviewOverlay roadBuilder={roadBuilder} />
+
         <aside className="scene-performance" aria-label="أداء العرض" aria-live="off">
           <span>الأداء</span>
-          {frameRate.state === 'active' ? (
-            <span>{frameRate.fps} FPS · {frameRate.frameTimeMs} مللي ثانية</span>
+          {frameRate.fps !== null ? (
+            <span dir="ltr">{Math.round(frameRate.fps)} FPS</span>
           ) : (
             <span>{frameRate.state === 'stalled' ? 'توقف مؤقت · جارٍ القياس' : frameRate.state === 'paused' ? 'العرض متوقف' : 'جارٍ قياس الإطارات…'}</span>
           )}

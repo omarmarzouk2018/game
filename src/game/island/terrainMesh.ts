@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { IslandTerrain } from './terrain'
+import { computeTerrainVertexColor, TERRAIN_PALETTE } from './terrainColor'
 
 type TerrainVertex = {
   x: number
@@ -9,19 +10,12 @@ type TerrainVertex = {
 }
 
 /**
- * Builds the clipped island terrain BufferGeometry with biome vertex coloring based on elevation and slope.
+ * Builds the clipped island terrain BufferGeometry with biome vertex coloring based on elevation, slope, and spatial biomes.
  */
 export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeometry {
   const side = terrain.segments + 1
   const cellSize = terrain.width / terrain.segments
   const seabedLimit = -5.8
-  const deepSeabed = new THREE.Color(0x26555b)
-  const shallowSeabed = new THREE.Color(0x558f88)
-  const beach = new THREE.Color(0xd4b886)
-  const grass = new THREE.Color(0x4a7c34)
-  const highland = new THREE.Color(0x5d7348)
-  const rock = new THREE.Color(0x6b6e6b)
-  const snow = new THREE.Color(0xc8d0d4)
 
   let peakHeight = 0
   for (let i = 0; i < terrain.heights.length; i += 1) {
@@ -46,32 +40,22 @@ export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeome
     const dz_dz = (front - back) / (2 * cellSize)
     const slopeDeg = Math.atan(Math.hypot(dz_dx, dz_dz)) * (180 / Math.PI)
 
-    let color: THREE.Color
-    if (height < -2.0) {
-      color = deepSeabed.clone().lerp(shallowSeabed, THREE.MathUtils.smoothstep(height, -5.8, -2.0))
-    } else if (height < 0) {
-      color = shallowSeabed.clone().lerp(beach, (height + 2.0) / 2.0)
-    } else if (height < 1.2) {
-      color = beach.clone().lerp(grass, height / 1.2)
-    } else if (height < 6.0) {
-      color = grass.clone().lerp(highland, (height - 1.2) / 4.8)
-    } else if (height < 14.0) {
-      color = highland.clone().lerp(rock, (height - 6.0) / 8.0)
-    } else if (height < snowStart) {
-      color = rock.clone()
-    } else {
-      color = rock.clone().lerp(snow, Math.min(1, (height - snowStart) / (snowFull - snowStart)))
-    }
+    const worldX = ((index % side) / terrain.segments - 0.5) * terrain.width
+    const worldZ = (Math.floor(index / side) / terrain.segments - 0.5) * terrain.depth
 
-    if (slopeDeg > 25 && height > 0.5) {
-      const cliffFactor = Math.min(0.92, (slopeDeg - 25) / 20)
-      color.lerp(rock, cliffFactor)
-    }
+    const color = computeTerrainVertexColor({
+      height,
+      slopeDeg,
+      worldX,
+      worldZ,
+      snowStart,
+      snowFull,
+    })
 
     return {
-      x: ((index % side) / terrain.segments - 0.5) * terrain.width,
+      x: worldX,
       y: height,
-      z: (Math.floor(index / side) / terrain.segments - 0.5) * terrain.depth,
+      z: worldZ,
       color,
     }
   }
@@ -90,7 +74,7 @@ export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeome
       x: THREE.MathUtils.lerp(from.x, to.x, amount),
       y: height,
       z: THREE.MathUtils.lerp(from.z, to.z, amount),
-      color: deepSeabed,
+      color: TERRAIN_PALETTE.deepSeabed,
     }
   }
 

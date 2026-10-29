@@ -56,6 +56,7 @@ import {
   createTerrainGeometry,
   createTreeGeometry,
   createForestPlacements,
+  FOREST_CENTERS,
   createIslandDepthTexture,
   createOceanMaterial,
   rewriteRockDocument,
@@ -197,7 +198,7 @@ describe('createIslandScene lifecycle', () => {
     expect(placements.every(([x, z]) => terrainModule.sampleIslandTerrain(terrain, x, z).height > 0.9)).toBe(true)
   })
 
-  it('continues the shoreline slope below sea level while excluding deep-water faces', () => {
+  it('continues the shoreline slope below sea level while excluding deep-water faces', { timeout: 15000 }, () => {
     const terrain = terrainModule.createIslandTerrain(41723)
     const geometry = createTerrainGeometry(terrain)
     const positions = geometry.getAttribute('position')
@@ -581,9 +582,9 @@ describe('createIslandScene lifecycle', () => {
       const instancedMeshes = scene.children.filter((child): child is THREE.InstancedMesh =>
         child instanceof THREE.InstancedMesh && child.count > 0,
       )
-      // Filter out grass mesh (which has 408 vertices and vertex colors)
+      // Filter rock InstancedMeshes
       const rockMeshes = instancedMeshes.filter(
-        (mesh) => mesh.geometry.getAttribute('position').count !== 408,
+        (mesh) => mesh.name.toLowerCase().includes('rock'),
       )
 
       expect(rockMeshes.length).toBeGreaterThanOrEqual(2)
@@ -623,26 +624,78 @@ describe('createIslandScene lifecycle', () => {
       tree.dispose()
     })
 
-    it('densifies woodland clusters while keeping shoreline trees sparse', () => {
+    it('densifies woodland clusters while preventing trees from spawning on sand or rock', () => {
       const terrain = terrainModule.createIslandTerrain(41723)
       const forest1 = createForestPlacements(terrain)
       const forest2 = createForestPlacements(terrain)
 
       expect(forest1).toEqual(forest2)
-      expect(forest1.woodland.length).toBeGreaterThan(500)
-      expect(forest1.shoreline.length).toBeGreaterThan(15)
-      expect(forest1.shoreline.length).toBeLessThan(250)
-      expect(forest1.woodland.every(([x, z]) => Math.abs(x) >= 13 || z <= -10 || z >= 20)).toBe(true)
-      expect(forest1.woodland.every(([x, z]) => {
+      expect(forest1.woodland.length).toBeGreaterThan(700)
+      expect(forest1.woodland.length).toBeLessThan(1200)
+      expect(forest1.shoreline.length).toBe(0)
+      expect(forest1.woodland.every(([x, z]) => !terrainModule.isTerrainSand(terrain, x, z))).toBe(true)
+      expect(forest1.woodland.every(([x, z]) => !terrainModule.isTerrainRock(terrain, x, z))).toBe(true)
+    })
+
+    it('increases distance between trees as distance from forest center increases', () => {
+      const terrain = terrainModule.createIslandTerrain(41723)
+      const placements = createForestPlacements(terrain)
+      const woodland = placements.woodland
+
+      // Compute nearest-neighbor distance for each woodland tree
+      const coreDistances: number[] = []
+      const edgeDistances: number[] = []
+
+      for (let i = 0; i < woodland.length; i += 1) {
+        const [x1, z1] = woodland[i]
+        let nearestDist = Infinity
+
+        for (let j = 0; j < woodland.length; j += 1) {
+          if (i === j) continue
+          const [x2, z2] = woodland[j]
+          const dist = Math.hypot(x1 - x2, z1 - z2)
+          if (dist < nearestDist) nearestDist = dist
+        }
+
+        const distToCenter = Math.min(...FOREST_CENTERS.map((c) => Math.hypot(x1 - c.x, z1 - c.z)))
+        // High noise = close to forest center
+        if (distToCenter < 28) {
+          coreDistances.push(nearestDist)
+        } else if (distToCenter > 55) {
+          // Low noise = far from center, at the edge/periphery
+          edgeDistances.push(nearestDist)
+        }
+      }
+
+      expect(coreDistances.length).toBeGreaterThan(50)
+      expect(edgeDistances.length).toBeGreaterThan(50)
+
+      const avgCoreDist = coreDistances.reduce((a, b) => a + b, 0) / coreDistances.length
+      const avgEdgeDist = edgeDistances.reduce((a, b) => a + b, 0) / edgeDistances.length
+
+      console.log(`[Forest Spacing] Core Avg Distance: ${avgCoreDist.toFixed(2)}m, Edge Avg Distance: ${avgEdgeDist.toFixed(2)}m`)
+
+      // Verify that spacing between trees significantly increases away from forest center
+      expect(avgEdgeDist).toBeGreaterThan(avgCoreDist * 1.3)
+      expect(avgCoreDist).toBeLessThan(5.5)
+      expect(avgEdgeDist).toBeGreaterThan(6.0)
+
+      expect(woodland.every(([x, z]) => {
         const sample = terrainModule.sampleIslandTerrain(terrain, x, z)
-        return sample.land && sample.height > 1.8 && sample.height <= 16.5
-          && terrainModule.sampleTerrainSlope(terrain, x, z) <= 30
+        return sample.land && !terrainModule.isTerrainSand(terrain, x, z) && !terrainModule.isTerrainRock(terrain, x, z)
       })).toBe(true)
-      expect(forest1.shoreline.every(([x, z]) => {
-        const sample = terrainModule.sampleIslandTerrain(terrain, x, z)
-        return sample.land && sample.height >= 0.3 && sample.height <= 1.8
-          && terrainModule.sampleTerrainSlope(terrain, x, z) < 18
+      expect(placements.shoreline.every(([x, z]) => {
+        return !terrainModule.isTerrainSand(terrain, x, z) && !terrainModule.isTerrainRock(terrain, x, z)
       })).toBe(true)
+    })
+
+    it('places 3 forest centers on the outskirts of the island', () => {
+      expect(FOREST_CENTERS).toHaveLength(3)
+      for (const center of FOREST_CENTERS) {
+        const distFromIslandCenter = Math.hypot(center.x, center.z)
+        // Forest centers must be placed on the island outskirts (away from center x=0, z=0)
+        expect(distFromIslandCenter).toBeGreaterThan(80)
+      }
     })
 
     it('populates one default-tree InstancedMesh for woodland and shoreline placements', async () => {

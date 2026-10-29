@@ -286,4 +286,235 @@ describe('createCameraController', () => {
     controller.update(1)
     expect(camera.position.distanceTo(before)).toBeCloseTo(0)
   })
+
+  it('zooms towards the cursor position on the ground plane when zooming in', () => {
+    const { camera, element, controller } = setup()
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+      right: 800,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    // Cursor is to the right of the center (center is 400, 300)
+    element.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: -300,
+      clientX: 600,
+      clientY: 300,
+      cancelable: true,
+    }))
+
+    controller.update(1)
+
+    // Camera target and position x should have shifted towards negative X (where cursor was pointing on the right side from North looking South)
+    const target = camera.userData.islandCameraTarget as THREE.Vector3
+    expect(target).toBeDefined()
+    expect(target.x).toBeLessThan(-0.5)
+    expect(camera.position.x).toBeLessThan(-0.5)
+  })
+
+  it('zooms away from the cursor position when zooming out', () => {
+    const { camera, element, controller } = setup()
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+      right: 800,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    // Cursor is to the right of the center
+    element.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: 300,
+      clientX: 600,
+      clientY: 300,
+      cancelable: true,
+    }))
+
+    controller.update(1)
+
+    // Camera target should shift away from cursor
+    const target = camera.userData.islandCameraTarget as THREE.Vector3
+    expect(target).toBeDefined()
+    expect(target.x).toBeGreaterThan(0.5)
+  })
+
+  it('clears cursor zoom anchor when manual arrow panning starts', () => {
+    const { camera, element, controller } = setup()
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+      right: 800,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    element.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: -300,
+      clientX: 600,
+      clientY: 300,
+      cancelable: true,
+    }))
+
+    // Press arrow key to cancel anchor
+    key('keydown', 'ArrowLeft')
+    controller.update(0.5)
+    key('keyup', 'ArrowLeft')
+
+    const target = camera.userData.islandCameraTarget as THREE.Vector3
+    expect(target).toBeDefined()
+  })
+
+  it('safely handles cursor pointing above the horizon without moving target unexpectedly', () => {
+    const { camera, element, controller } = setup()
+    vi.spyOn(element, 'getBoundingClientRect').mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 800,
+      height: 600,
+      right: 800,
+      bottom: 600,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    })
+
+    // Pointing high above the horizon (clientY = -500, sky direction)
+    element.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: -200,
+      clientX: 400,
+      clientY: -500,
+      cancelable: true,
+    }))
+
+    controller.update(1)
+
+    // Normal zoom still works without errors and target remains centered
+    const target = camera.userData.islandCameraTarget as THREE.Vector3
+    expect(target.x).toBeCloseTo(0)
+  })
+
+  it('pans the map using middle mouse button (button 1)', () => {
+    const { camera, element, controller } = setup()
+    const before = camera.position.clone()
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 1, clientX: 20, clientY: 20, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { buttons: 4, clientX: 100, clientY: 60, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0)
+  })
+
+  it('pans the map using right mouse button (button 2)', () => {
+    const { camera, element, controller } = setup()
+    const before = camera.position.clone()
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 2, clientX: 30, clientY: 30, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { buttons: 2, clientX: 120, clientY: 80, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0)
+  })
+
+  it('pans the map using WASD keys', () => {
+    const { camera, controller } = setup()
+    const initialZ = camera.position.z
+
+    key('keydown', 'w')
+    controller.update(0.5)
+    key('keyup', 'w')
+    expect(camera.position.z).toBeGreaterThan(initialZ)
+
+    const beforeD = camera.position.clone()
+    key('keydown', 'd')
+    controller.update(0.5)
+    key('keyup', 'd')
+    expect(camera.position.distanceTo(beforeD)).toBeGreaterThan(0)
+    expect(camera.position.x).not.toBeCloseTo(beforeD.x)
+  })
+
+  it('rotates the camera using Q and E keys', () => {
+    const { camera, controller } = setup()
+    const initialX = camera.position.x
+
+    key('keydown', 'q')
+    controller.update(0.5)
+    key('keyup', 'q')
+    expect(camera.position.x).not.toBeCloseTo(initialX)
+  })
+
+  it('rotates with Ctrl + mouse move even when isInteractionActive is true', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 600)
+    camera.position.set(0, 12, -16)
+    camera.lookAt(0, 0, 0)
+    const controller = createCameraController({
+      camera,
+      element,
+      islandCenter: new THREE.Vector3(),
+      movementBounds: new THREE.Box2(new THREE.Vector2(-10, -8), new THREE.Vector2(10, 8)),
+      minDistance: 8,
+      maxDistance: 40,
+      isInteractionActive: () => true,
+    })
+    controllers.push(controller)
+
+    const before = camera.position.clone()
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 0, bubbles: true }))
+    key('keydown', 'Control')
+    element.dispatchEvent(new PointerEvent('pointermove', { clientX: 100, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.x).not.toBeCloseTo(before.x)
+  })
+
+  it('pans with Space + Left click drag even when isInteractionActive is true', () => {
+    const element = document.createElement('div')
+    document.body.append(element)
+    const camera = new THREE.PerspectiveCamera(42, 1.5, 0.1, 600)
+    camera.position.set(0, 12, -16)
+    camera.lookAt(0, 0, 0)
+    const controller = createCameraController({
+      camera,
+      element,
+      islandCenter: new THREE.Vector3(),
+      movementBounds: new THREE.Box2(new THREE.Vector2(-10, -8), new THREE.Vector2(10, 8)),
+      minDistance: 8,
+      maxDistance: 40,
+      isInteractionActive: () => true,
+    })
+    controllers.push(controller)
+
+    const before = camera.position.clone()
+    key('keydown', ' ')
+    element.dispatchEvent(new PointerEvent('pointerdown', { button: 0, clientX: 10, clientY: 10, bubbles: true }))
+    element.dispatchEvent(new PointerEvent('pointermove', { buttons: 1, clientX: 90, clientY: 50, bubbles: true }))
+    controller.update(1)
+
+    expect(camera.position.distanceTo(before)).toBeGreaterThan(0)
+  })
+
+  it('pans camera directly using pan and panRelative methods', () => {
+    const { camera, controller } = setup()
+    const before = camera.position.clone()
+
+    controller.pan(5, 5)
+    expect(camera.position.x).not.toBeCloseTo(before.x)
+
+    const mid = camera.position.clone()
+    controller.panRelative(5, 5)
+    expect(camera.position.distanceTo(mid)).toBeGreaterThan(0)
+  })
 })

@@ -5,7 +5,7 @@ export type FrameRateReading = {
 }
 
 const samplingWindowMs = 1000
-const maximumFrameGapMs = 250
+const maximumFrameGapMs = 1000
 const emptyReading: FrameRateReading = { state: 'measuring', fps: null, frameTimeMs: null }
 
 export function createFrameRateMonitor() {
