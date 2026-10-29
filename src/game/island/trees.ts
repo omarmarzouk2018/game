@@ -1,14 +1,18 @@
 import * as THREE from 'three'
 import { DECIDUOUS_MODEL_DATA } from './treeModelData'
 import {
+  BiomeType,
+  FOREST_CENTERS,
   hash2D,
   isTerrainRock,
   isTerrainSand,
   sampleIslandTerrain,
-  sampleTerrainSlope,
+  sampleTerrainBiome,
   valueNoise2D,
   type IslandTerrain,
 } from './terrain'
+
+export { FOREST_CENTERS }
 
 export type ForestPlacements = {
   shoreline: Array<[number, number]>
@@ -70,15 +74,7 @@ export function createTreePlacements(terrain: IslandTerrain): Array<[number, num
   return placements
 }
 
-/**
- * 3 distinct forest centers situated on the outer edges/outskirts of the island.
- * Leaves the central plains and town clearing open for settlements and exploration.
- */
-export const FOREST_CENTERS = [
-  { name: 'South-West Edge', x: -100, z: -65, radius: 96 },
-  { name: 'South-East Edge', x: 105, z: -70, radius: 96 },
-  { name: 'North-East Edge', x: 75, z: 45, radius: 91 },
-] as const
+
 
 interface WoodlandCandidate {
   x: number
@@ -119,8 +115,11 @@ export function createForestPlacements(terrain: IslandTerrain): ForestPlacements
       const z = gz + jz
 
       const sample = sampleIslandTerrain(terrain, x, z)
-      // Trees are strictly excluded from water, sand, and rock
-      if (!sample.land || isTerrainSand(terrain, x, z) || isTerrainRock(terrain, x, z)) {
+      if (!sample.land) continue
+
+      const biome = sampleTerrainBiome(terrain, x, z)
+      // Trees strictly grow only in designated forest soil; NEVER on sand beaches or rock cliffs
+      if (biome !== BiomeType.FOREST_SOIL) {
         continue
       }
 

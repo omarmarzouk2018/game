@@ -5,18 +5,43 @@ export type TerrainSample = {
   land: boolean
 }
 
+/**
+ * Unified island biome classification enumeration.
+ * Single source of truth for terrain rendering, grass distribution, tree forests, and rock placement.
+ */
+export enum BiomeType {
+  DEEP_WATER = 0,
+  SHALLOW_WATER = 1,
+  SAND_BEACH = 2,
+  FERTILE_GRASS = 3,
+  FOREST_SOIL = 4,
+  ROCK_CLIFF = 5,
+  SNOW_PEAK = 6,
+}
+
 export type IslandTerrain = {
   width: number
   depth: number
   segments: number
   heights: Float32Array
   landMask: Uint8Array
+  biomes: Uint8Array
 }
 
 export const HEIGHT_SCALE = 3.6
 const DEFAULT_SEGMENTS = 256
 const ISLAND_WIDTH = 440
 const ISLAND_DEPTH = 440
+
+/**
+ * 3 distinct forest centers situated on the outer edges/outskirts of the island.
+ * Leaves the central plains and town clearing open for settlements and exploration.
+ */
+export const FOREST_CENTERS = [
+  { name: 'South-West Edge', x: -100, z: -65, radius: 96 },
+  { name: 'South-East Edge', x: 105, z: -70, radius: 96 },
+  { name: 'North-East Edge', x: 75, z: 45, radius: 91 },
+] as const
 
 // Normalized island coordinates span [-0.5, 0.5] on each axis; positive z is the rear.
 function seededRandom(seed: number): () => number {
@@ -139,13 +164,10 @@ function heightAt(x: number, z: number, random: number): number {
   const preTerrace = 1.35 + plains - 0.48 + broadRelief + mountainSpine + foothills
   const terracePhase = (preTerrace * 2.2) % 1
   const terrace = (smoothstep(0.2, 0.8, terracePhase) - terracePhase) * 0.12 * smoothstep(2.0, 4.5, preTerrace)
-
   const variation = (random - 0.5) * 0.015
-  const inlandHeight = Math.max(1.25, preTerrace + terrace + variation)
-  const islandCoverage = islandFootprint * harborCut
 
   // Coastal topography profile:
-  // - The front face of the island (South, normalizedZ < -0.02) is a grand, continuous beach.
+  // - The front face of the island (South, normalizedZ < 0.05) is a grand, continuous beach.
   // - In the center of this front beach (normalizedX near 0, normalizedZ < -0.10), the slope into the
   //   water is ultra-gentle ("ميول اخف جدااا"), creating an expansive crystal-clear shallow lagoon.
   // - The western coast features a sheltered harbor bay.
@@ -154,12 +176,20 @@ function heightAt(x: number, z: number, random: number): number {
   const harborBeach = smoothstep(0.06, 0.40, isHarbor)
 
   // Continuous sweeping beach along the entire front (South) facade of the island
-  const frontDist = smoothstep(0.68, 0.20, Math.abs(normalizedX))
-  const frontZ = smoothstep(0.04, -0.20, normalizedZ)
-  const frontBeach = frontDist * frontZ
+  const frontX = 1.0 - smoothstep(0.60, 0.80, Math.abs(normalizedX))
+  const frontZ = 1.0 - smoothstep(-0.25, 0.15, normalizedZ)
+  const frontBeach = frontX * frontZ
 
   const beachFactor = Math.min(1.0, Math.max(harborBeach, frontBeach))
   const cliffFactor = 1.0 - beachFactor
+
+  // Gentle southern plain gradient: the southern half slopes gracefully down towards the front beach,
+  // preventing any sudden 5m cliffs or steep ledges between the inland grass and the sand.
+  const southGrad = smoothstep(-0.25, -0.78, normalizedZ) * frontX
+  const southDescent = southGrad * 0.72
+  const coastalInlandHeight = Math.max(0.65, preTerrace - southDescent + terrace + variation)
+  const cliffInlandHeight = Math.max(1.25, preTerrace + terrace + variation)
+  const islandCoverage = islandFootprint * harborCut
 
   // Center front beach with ultra-gentle slope into the water
   const centerBeachX = smoothstep(0.34, 0.04, Math.abs(normalizedX))
@@ -178,7 +208,7 @@ function heightAt(x: number, z: number, random: number): number {
 
   // Steep shoreline cliff ramp for rocky coasts
   const cliffShore = smoothstep(0.0, 0.22, islandCoverage)
-  const cliffHeight = inlandHeight * HEIGHT_SCALE * cliffShore - cliffSeabed * (1 - islandCoverage)
+  const cliffHeight = cliffInlandHeight * HEIGHT_SCALE * cliffShore - cliffSeabed * (1 - islandCoverage)
 
   // Gentle beach profile: completely seamless, smooth, continuous incline from sea to plains.
   // Eliminates any steep gray cliffs or sudden ledges behind the beach.
@@ -192,7 +222,7 @@ function heightAt(x: number, z: number, random: number): number {
     const smoothT = smoothstep(0.0, 1.0, Math.min(1.0, t))
     // Soft curve: expansive and gentle near the sand, rolling seamlessly into lush grass
     const gentleT = Math.pow(smoothT, 1.55)
-    beachHeight = 0.05 + (inlandHeight * HEIGHT_SCALE - 0.05) * gentleT
+    beachHeight = 0.05 + (coastalInlandHeight * HEIGHT_SCALE - 0.05) * gentleT
   }
 
   return cliffFactor * cliffHeight + (1 - cliffFactor) * beachHeight
@@ -208,6 +238,7 @@ export function createIslandTerrain(seed: number, segments = DEFAULT_SEGMENTS): 
   const side = segments + 1
   const heights = new Float32Array(side * side)
   const landMask = new Uint8Array(side * side)
+  const biomes = new Uint8Array(side * side)
   const random = seededRandom(seed)
 
   for (let row = 0; row <= segments; row += 1) {
@@ -221,7 +252,88 @@ export function createIslandTerrain(seed: number, segments = DEFAULT_SEGMENTS): 
     }
   }
 
-  const terrain = { width: ISLAND_WIDTH, depth: ISLAND_DEPTH, segments, heights, landMask }
+  // Pre-calculate peak height for alpine snow boundary
+  let peakHeight = 0
+  for (let i = 0; i < heights.length; i += 1) {
+    if (heights[i] > peakHeight) peakHeight = heights[i]
+  }
+  const snowStart = peakHeight * 0.72
+  const cellSize = ISLAND_WIDTH / segments
+
+  // Classify unified biome splatmap for each grid vertex
+  for (let row = 0; row <= segments; row += 1) {
+    const z = (row / segments - 0.5) * ISLAND_DEPTH
+    const normalizedZ = z / (ISLAND_DEPTH / 2)
+    for (let column = 0; column <= segments; column += 1) {
+      const x = (column / segments - 0.5) * ISLAND_WIDTH
+      const normalizedX = x / (ISLAND_WIDTH / 2)
+      const index = row * side + column
+      const height = heights[index]
+
+      if (height < -1.8) {
+        biomes[index] = BiomeType.DEEP_WATER
+        continue
+      }
+      if (height <= 0.0) {
+        biomes[index] = BiomeType.SHALLOW_WATER
+        continue
+      }
+
+      // Compute vertex slope from immediate neighbors in the grid
+      const left = heights[row * side + Math.max(0, column - 1)]
+      const right = heights[row * side + Math.min(segments, column + 1)]
+      const back = heights[Math.max(0, row - 1) * side + column]
+      const front = heights[Math.min(segments, row + 1) * side + column]
+      const dz_dx = (right - left) / (2 * cellSize)
+      const dz_dz = (front - back) / (2 * cellSize)
+      const slopeDeg = Math.atan(Math.hypot(dz_dx, dz_dz)) * (180 / Math.PI)
+
+      if (height >= snowStart) {
+        biomes[index] = BiomeType.SNOW_PEAK
+        continue
+      }
+
+      const isHighRock = height >= 12.0
+      const isSteepCliff = slopeDeg >= 20.0 && height > 2.0
+      const isCoastalCliff = slopeDeg >= 15.0 && height <= 2.0 && normalizedZ > -0.05
+      if (isHighRock || isSteepCliff || isCoastalCliff) {
+        biomes[index] = BiomeType.ROCK_CLIFF
+        continue
+      }
+
+      // Sandy beaches along the coast and southern bay
+      const isFrontBeachZone = normalizedZ < -0.05 && Math.abs(normalizedX) < 0.78 && height < 2.85
+      const isLowShoreSand = height < 2.4 && slopeDeg < 15.0
+      if (isFrontBeachZone || isLowShoreSand) {
+        biomes[index] = BiomeType.SAND_BEACH
+        continue
+      }
+
+      // Preserve central town clearing for settlement building
+      const inTownClearing = Math.abs(x) < 13 && z > -10 && z < 20
+      let inForestZone = false
+      if (!inTownClearing) {
+        for (let k = 0; k < FOREST_CENTERS.length; k += 1) {
+          const center = FOREST_CENTERS[k]
+          const dist = Math.hypot(x - center.x, z - center.z)
+          const borderNoise = valueNoise2D(x * 0.05, z * 0.05, 12873 + k * 1000) * 0.25
+          const effectiveRadius = center.radius * (1.0 + borderNoise)
+          if (dist < effectiveRadius) {
+            inForestZone = true
+            break
+          }
+        }
+      }
+
+      if (inForestZone) {
+        biomes[index] = BiomeType.FOREST_SOIL
+      } else {
+        biomes[index] = BiomeType.FERTILE_GRASS
+      }
+    }
+  }
+
+  const terrain = { width: ISLAND_WIDTH, depth: ISLAND_DEPTH, segments, heights, landMask, biomes }
   defaultIslandTerrain = terrain
   const stats = getIslandTerrainStats(terrain)
   console.info(
@@ -356,91 +468,91 @@ export function isBuildable(
 }
 
 /**
- * Checks if a coordinate on the island terrain is sand (beach, shoreline sand, or front beach shelf).
+ * Samples the discrete biome classification at any world coordinate on the island.
+ * Single source of truth for all environment systems (rendering, grass, trees, rocks).
+ */
+export function sampleTerrainBiome(
+  terrainOrX: IslandTerrain | number,
+  xOrZ: number,
+  zOrUndefined?: number,
+): BiomeType {
+  let terrain: IslandTerrain
+  let x: number
+  let z: number
+  if (typeof terrainOrX === 'number') {
+    if (!defaultIslandTerrain) {
+      defaultIslandTerrain = createIslandTerrain(41723)
+    }
+    terrain = defaultIslandTerrain
+    x = terrainOrX
+    z = xOrZ
+  } else {
+    terrain = terrainOrX
+    x = xOrZ
+    z = zOrUndefined!
+  }
+
+  const side = terrain.segments + 1
+  const halfW = terrain.width / 2
+  const halfD = terrain.depth / 2
+
+  const clampedX = Math.max(-halfW, Math.min(halfW, x))
+  const clampedZ = Math.max(-halfD, Math.min(halfD, z))
+
+  const col = Math.round(((clampedX + halfW) / terrain.width) * terrain.segments)
+  const row = Math.round(((clampedZ + halfD) / terrain.depth) * terrain.segments)
+  const index = row * side + col
+
+  if (terrain.biomes && index >= 0 && index < terrain.biomes.length) {
+    return terrain.biomes[index] as BiomeType
+  }
+  return BiomeType.DEEP_WATER
+}
+
+/**
+ * Checks if a coordinate on the island terrain is sand (beach or shoreline).
  */
 export function isTerrainSand(
   terrainOrX: IslandTerrain | number,
   xOrZ: number,
   zOrUndefined?: number,
 ): boolean {
-  let terrain: IslandTerrain
-  let x: number
-  let z: number
-  if (typeof terrainOrX === 'number') {
-    if (!defaultIslandTerrain) {
-      defaultIslandTerrain = createIslandTerrain(41723)
-    }
-    terrain = defaultIslandTerrain
-    x = terrainOrX
-    z = xOrZ
-  } else {
-    terrain = terrainOrX
-    x = xOrZ
-    z = zOrUndefined!
-  }
-
-  const sample = sampleIslandTerrain(terrain, x, z)
-  if (!sample.land) {
-    return false
-  }
-
-  // Any terrain below the grass line is sandy beach or wet sand
-  if (sample.height < 2.2) {
-    return true
-  }
-
-  // Wide sandy beach zone along the southern coast (front beach shelf)
-  const normalizedX = x / (terrain.width / 2)
-  const normalizedZ = z / (terrain.depth / 2)
-  const isFrontBeachZone = normalizedZ < -0.02 && Math.abs(normalizedX) < 0.68 && sample.height < 3.2
-  if (isFrontBeachZone) {
-    return true
-  }
-
-  return false
+  return sampleTerrainBiome(terrainOrX, xOrZ, zOrUndefined) === BiomeType.SAND_BEACH
 }
 
 /**
- * Checks if a coordinate on the island terrain is rock (steep cliffs, crags, or high mountain rocky peaks).
+ * Checks if a coordinate on the island terrain is rock (steep cliffs, crags, or mountain peaks).
  */
 export function isTerrainRock(
   terrainOrX: IslandTerrain | number,
   xOrZ: number,
   zOrUndefined?: number,
 ): boolean {
-  let terrain: IslandTerrain
-  let x: number
-  let z: number
-  if (typeof terrainOrX === 'number') {
-    if (!defaultIslandTerrain) {
-      defaultIslandTerrain = createIslandTerrain(41723)
-    }
-    terrain = defaultIslandTerrain
-    x = terrainOrX
-    z = xOrZ
-  } else {
-    terrain = terrainOrX
-    x = xOrZ
-    z = zOrUndefined!
-  }
-
-  const sample = sampleIslandTerrain(terrain, x, z)
-  if (!sample.land) {
-    return false
-  }
-
-  // High mountain elevations above the tree line where soil turns to rock and snow
-  if (sample.height > 10.5) {
-    return true
-  }
-
-  // Steep slopes where terrain shaders render rocky cliff faces and 3D boulders spawn
-  const slope = sampleTerrainSlope(terrain, x, z)
-  if (slope >= 20.0) {
-    return true
-  }
-
-  return false
+  const biome = sampleTerrainBiome(terrainOrX, xOrZ, zOrUndefined)
+  return biome === BiomeType.ROCK_CLIFF || biome === BiomeType.SNOW_PEAK
 }
+
+/**
+ * Checks if a coordinate on the island terrain is fertile open grassland.
+ */
+export function isTerrainGrass(
+  terrainOrX: IslandTerrain | number,
+  xOrZ: number,
+  zOrUndefined?: number,
+): boolean {
+  return sampleTerrainBiome(terrainOrX, xOrZ, zOrUndefined) === BiomeType.FERTILE_GRASS
+}
+
+/**
+ * Checks if a coordinate on the island terrain is dense forest soil.
+ */
+export function isTerrainForest(
+  terrainOrX: IslandTerrain | number,
+  xOrZ: number,
+  zOrUndefined?: number,
+): boolean {
+  return sampleTerrainBiome(terrainOrX, xOrZ, zOrUndefined) === BiomeType.FOREST_SOIL
+}
+
 
 

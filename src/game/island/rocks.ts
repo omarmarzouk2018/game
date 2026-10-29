@@ -10,6 +10,7 @@ import {
 } from './rockModelData'
 import {
   hash2D,
+  isTerrainSand,
   sampleIslandTerrain,
   sampleTerrainNormal,
   sampleTerrainSlope,
@@ -66,8 +67,8 @@ export function createRockPlacements(terrain: IslandTerrain): Array<[number, num
       // Keep the front beach and sandy shorelines completely clean of rocks
       const normalizedX = x / (terrain.width / 2)
       const normalizedZ = z / (terrain.depth / 2)
-      const isFrontBeachZone = normalizedZ < -0.02 && Math.abs(normalizedX) < 0.68 && sample.height < 3.6
-      if (isFrontBeachZone) {
+      const isFrontBeachZone = normalizedZ < -0.05 && Math.abs(normalizedX) < 0.78 && sample.height < 4.0
+      if (isFrontBeachZone || isTerrainSand(terrain, x, z)) {
         continue
       }
 

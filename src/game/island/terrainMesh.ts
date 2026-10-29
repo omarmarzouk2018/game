@@ -50,6 +50,7 @@ export function createTerrainGeometry(terrain: IslandTerrain): THREE.BufferGeome
       worldZ,
       snowStart,
       snowFull,
+      biome: terrain.biomes ? (terrain.biomes[index] as any) : undefined,
     })
 
     return {

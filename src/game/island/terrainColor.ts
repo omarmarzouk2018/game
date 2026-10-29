@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { valueNoise2D } from './terrain'
+import { valueNoise2D, BiomeType } from './terrain'
 
 /**
  * Biome color palette representing natural coastal, grassland, forest, and mountain environments.
@@ -32,6 +32,7 @@ export type TerrainColorOptions = {
   worldZ: number
   snowStart: number
   snowFull: number
+  biome?: BiomeType
 }
 
 /**
@@ -52,7 +53,15 @@ export function computeTerrainVertexColor(options: TerrainColorOptions): THREE.C
     return TERRAIN_PALETTE.shallowSeabed.clone().lerp(TERRAIN_PALETTE.wetSand, factor)
   }
 
-  // 2. Shoreline and beach sands
+  // 2. Shoreline and beach sands (governed by Biome Grid when provided)
+  if (options.biome === BiomeType.SAND_BEACH) {
+    if (height < 0.3) {
+      const factor = THREE.MathUtils.clamp((height + 0.3) / 0.6, 0, 1)
+      return TERRAIN_PALETTE.wetSand.clone().lerp(TERRAIN_PALETTE.beach, factor)
+    }
+    return TERRAIN_PALETTE.beach.clone()
+  }
+
   if (height < 0.3) {
     const factor = THREE.MathUtils.clamp((height + 0.3) / 0.6, 0, 1)
     return TERRAIN_PALETTE.wetSand.clone().lerp(TERRAIN_PALETTE.beach, factor)

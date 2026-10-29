@@ -5,8 +5,10 @@ import {
   GRASS_MODEL_POSITIONS,
 } from './grassModelData'
 import {
+  BiomeType,
   hash2D,
   sampleIslandTerrain,
+  sampleTerrainBiome,
   sampleTerrainSlope,
   type IslandTerrain,
 } from './terrain'
@@ -122,7 +124,11 @@ export function createGrassPlacements(terrain: IslandTerrain): Array<[number, nu
       const z = gz + jz
 
       const sample = sampleIslandTerrain(terrain, x, z)
-      if (!sample.land || sample.height < 1.2 || sample.height > 10.0) {
+      if (!sample.land || sample.height < 1.2 || sample.height > 10.0) continue
+
+      const biome = sampleTerrainBiome(terrain, x, z)
+      // Grass strictly grows only on fertile grass and forest margins; NEVER on sand, rock, snow, or water
+      if (biome !== BiomeType.FERTILE_GRASS && biome !== BiomeType.FOREST_SOIL) {
         continue
       }
 

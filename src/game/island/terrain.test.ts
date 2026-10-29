@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { createIslandTerrain, isBuildable, sampleIslandTerrain, sampleTerrainSlope } from './terrain'
+import {
+  BiomeType,
+  createIslandTerrain,
+  isBuildable,
+  isTerrainForest,
+  isTerrainGrass,
+  isTerrainRock,
+  isTerrainSand,
+  sampleIslandTerrain,
+  sampleTerrainBiome,
+  sampleTerrainSlope,
+} from './terrain'
 import { createTreePlacements } from './IslandScene'
+import { createGrassPlacements } from './grass'
 
 // Coordinates are normalized from the island's centered world bounds:
 // x and z each run from -0.5 to 0.5, with +z toward the rear ridge.
@@ -17,6 +29,7 @@ describe('island terrain', () => {
     const repeat = createIslandTerrain(seed, segments)
     expect(repeat.heights).toEqual(terrain.heights)
     expect(repeat.landMask).toEqual(terrain.landMask)
+    expect(repeat.biomes).toEqual(terrain.biomes)
   })
 
   it('doubles the island world dimensions while preserving normalized coverage', () => {
@@ -215,6 +228,55 @@ describe('island terrain', () => {
       // Foothills should form a meaningful transition zone (at least 5% of all cells)
       const foothillPercent = (foothillCount / terrain.heights.length) * 100
       expect(foothillPercent).toBeGreaterThan(5)
+    })
+  })
+
+  describe('Biome Grid / Splatmap', () => {
+    it('allocates and populates terrain biomes array', () => {
+      const side = segments + 1
+      expect(terrain.biomes).toBeInstanceOf(Uint8Array)
+      expect(terrain.biomes.length).toBe(side * side)
+    })
+
+    it('correctly maps coordinates to biomes via sampleTerrainBiome and helper functions', () => {
+      // Ocean far away should be deep or shallow water
+      const oceanSample = sampleTerrainBiome(terrain, -terrain.width * 0.49, 0)
+      expect([BiomeType.DEEP_WATER, BiomeType.SHALLOW_WATER]).toContain(oceanSample)
+
+      // Center plain should be grass or forest
+      const centerBiome = sampleTerrainBiome(terrain, 0, 0)
+      expect([BiomeType.FERTILE_GRASS, BiomeType.FOREST_SOIL]).toContain(centerBiome)
+      expect(isTerrainGrass(terrain, 0, 0) || isTerrainForest(terrain, 0, 0)).toBe(true)
+      expect(isTerrainSand(terrain, 0, 0)).toBe(false)
+      expect(isTerrainRock(terrain, 0, 0)).toBe(false)
+    })
+
+    it('ensures zero trees are placed on sand beaches or rocks', () => {
+      const treePlacements = createTreePlacements(terrain)
+      expect(treePlacements.length).toBeGreaterThan(0)
+      for (const [x, z] of treePlacements) {
+        const biome = sampleTerrainBiome(terrain, x, z)
+        expect(biome).not.toBe(BiomeType.SAND_BEACH)
+        expect(biome).not.toBe(BiomeType.ROCK_CLIFF)
+        expect(biome).not.toBe(BiomeType.DEEP_WATER)
+        expect(biome).not.toBe(BiomeType.SHALLOW_WATER)
+        expect(isTerrainSand(terrain, x, z)).toBe(false)
+        expect(isTerrainRock(terrain, x, z)).toBe(false)
+      }
+    })
+
+    it('ensures zero grass blades are placed on sand beaches or rocks', () => {
+      const grassPlacements = createGrassPlacements(terrain)
+      expect(grassPlacements.length).toBeGreaterThan(0)
+      for (const [x, z] of grassPlacements) {
+        const biome = sampleTerrainBiome(terrain, x, z)
+        expect(biome).not.toBe(BiomeType.SAND_BEACH)
+        expect(biome).not.toBe(BiomeType.ROCK_CLIFF)
+        expect(biome).not.toBe(BiomeType.DEEP_WATER)
+        expect(biome).not.toBe(BiomeType.SHALLOW_WATER)
+        expect(isTerrainSand(terrain, x, z)).toBe(false)
+        expect(isTerrainRock(terrain, x, z)).toBe(false)
+      }
     })
   })
 })

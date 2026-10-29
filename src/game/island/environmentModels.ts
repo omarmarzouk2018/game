@@ -188,11 +188,11 @@ export function addInstances(
     const sample = sampleIslandTerrain(terrain, x, z)
     const normalizedX = x / (terrain.width / 2)
     const normalizedZ = z / (terrain.depth / 2)
-    const isFrontBeachZone = normalizedZ < -0.02 && Math.abs(normalizedX) < 0.68 && sample.height < 3.6
+    const isFrontBeachZone = normalizedZ < -0.05 && Math.abs(normalizedX) < 0.78 && sample.height < 4.0
 
     if (
       !sample.land ||
-      (kind === 'rock' && (sample.height < 1.45 || sample.height > 48.0 || isFrontBeachZone)) ||
+      (kind === 'rock' && (sample.height < 1.45 || sample.height > 48.0 || isFrontBeachZone || isTerrainSand(terrain, x, z))) ||
       (kind === 'tree' && (isTerrainSand(terrain, x, z) || isTerrainRock(terrain, x, z)))
     ) {
       continue
